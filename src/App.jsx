@@ -415,7 +415,7 @@ export function App() {
             setMessage={setMessage}
           />
         ) : null}
-        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} cycleMembers={activeMembers} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
+        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} cycleMembers={activeMembers} member={member} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
         {activeView === "history" ? <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
       </main>
     </div>
@@ -2047,11 +2047,14 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
   );
 }
 
-function Members({ currentCycle, cycleMembers, members, setCurrentCycle, setMessage }) {
+function Members({ currentCycle, cycleMembers, member, members, setCurrentCycle, setMessage }) {
   const [form, setForm] = useState({ name: "", email: "", role: "member" });
+  const [cycleMemberToAdd, setCycleMemberToAdd] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const householdActiveMembers = members.filter((item) => item.active);
   const includedIds = currentCycle?.memberIds || [];
   const availableForCycle = householdActiveMembers.filter((person) => !includedIds.includes(person.id));
+  const activeAdminCount = members.filter((person) => person.active && person.role === "admin").length;
 
   async function submitMember(event) {
     event.preventDefault();
@@ -2073,7 +2076,40 @@ function Members({ currentCycle, cycleMembers, members, setCurrentCycle, setMess
     const nextMemberIds = [...new Set([...includedIds, memberId])];
     await updateRecord("cycles", currentCycle.id, { memberIds: nextMemberIds });
     setCurrentCycle({ ...currentCycle, memberIds: nextMemberIds });
+    setCycleMemberToAdd("");
     setMessage("Member added to this month.");
+  }
+
+  async function deleteMemberFromWorkspace() {
+    if (!deleteTarget) return;
+    if (deleteTarget.role === "admin") {
+      setDeleteTarget(null);
+      return setMessage("Admin accounts cannot be deleted. Change their role first.");
+    }
+
+    const nextMemberIds = includedIds.filter((id) => id !== deleteTarget.id);
+    if (nextMemberIds.length !== includedIds.length) {
+      await updateRecord("cycles", currentCycle.id, { memberIds: nextMemberIds });
+      setCurrentCycle({ ...currentCycle, memberIds: nextMemberIds });
+    }
+
+    await deleteRecord("members", deleteTarget.id);
+    setDeleteTarget(null);
+    setMessage("Member deleted from workspace.");
+  }
+
+  async function changeMemberRole(person, role) {
+    if (person.role === "admin" && role !== "admin" && activeAdminCount <= 1) {
+      return setMessage("There must always be at least one active admin.");
+    }
+    await updateRecord("members", person.id, { role });
+  }
+
+  async function toggleMemberActive(person) {
+    if (person.active && person.role === "admin" && activeAdminCount <= 1) {
+      return setMessage("There must always be at least one active admin.");
+    }
+    await updateRecord("members", person.id, { active: !person.active });
   }
 
   return (
@@ -2110,9 +2146,12 @@ function Members({ currentCycle, cycleMembers, members, setCurrentCycle, setMess
           <p>Manage role, access status, and who is counted in the current month.</p>
         </div>
         <div className="cycle-member-manager">
-          <div>
-            <strong>This month</strong>
-            <span>{includedIds.length} selected member{includedIds.length === 1 ? "" : "s"}</span>
+          <div className="cycle-member-manager__header">
+            <div>
+              <span className="eyebrow">Current cycle</span>
+              <p>Only these members are counted in meals, deposits, and balances.</p>
+            </div>
+            <span className="cycle-member-count">{includedIds.length} selected</span>
           </div>
           <div className="cycle-member-pills">
             {cycleMembers.map((person) => (
@@ -2120,44 +2159,63 @@ function Members({ currentCycle, cycleMembers, members, setCurrentCycle, setMess
             ))}
           </div>
           {availableForCycle.length ? (
-            <label>
-              Add member to this month
-              <select defaultValue="" onChange={(event) => {
-                if (!event.target.value) return;
-                addMemberToCycle(event.target.value);
-                event.target.value = "";
-              }}>
-                <option value="">Select member</option>
-                {availableForCycle.map((person) => (
-                  <option key={person.id} value={person.id}>{person.name}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+            <div className="cycle-member-add">
+              <label>
+                Add member
+                <select value={cycleMemberToAdd} onChange={(event) => setCycleMemberToAdd(event.target.value)}>
+                  <option value="">Choose someone</option>
+                  {availableForCycle.map((person) => (
+                    <option key={person.id} value={person.id}>{person.name}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="secondary" disabled={!cycleMemberToAdd} type="button" onClick={() => addMemberToCycle(cycleMemberToAdd)}>
+                <Plus size={16} /> Add to month
+              </button>
+            </div>
+          ) : (
+            <p className="cycle-member-complete">All active household members are already included this month.</p>
+          )}
         </div>
         <div className="entry-list">
           {members.map((person) => (
-            <article className="entry-row" key={person.id}>
-              <div>
+            <article className="entry-row member-row" key={person.id}>
+              <div className="member-row__info">
                 <MemberNameEditor person={person} setMessage={setMessage} />
                 <span>{person.email}</span>
                 <small>
                   {person.role} · {person.active ? "active" : "inactive"}
                 </small>
               </div>
-              <div className="row-actions wide">
-                <select value={person.role} onChange={(event) => updateRecord("members", person.id, { role: event.target.value })}>
+              <div className="member-row__actions">
+                <select value={person.role} onChange={(event) => changeMemberRole(person, event.target.value)}>
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
                 </select>
-                <button className="secondary" onClick={() => updateRecord("members", person.id, { active: !person.active })}>
+                <button className="secondary" onClick={() => toggleMemberActive(person)}>
                   {person.active ? "Deactivate" : "Activate"}
+                </button>
+                <button
+                  className="delete-member-button"
+                  disabled={person.role === "admin"}
+                  title={person.role === "admin" ? "Admin accounts cannot be deleted while they are admin" : "Delete member"}
+                  onClick={() => setDeleteTarget(person)}
+                >
+                  <Trash2 size={17} />
                 </button>
               </div>
             </article>
           ))}
         </div>
       </section>
+      <ConfirmModal
+        confirmLabel="Delete member"
+        message={deleteTarget ? `${deleteTarget.name} will be removed from the workspace and from this month. Existing historical entries are not edited.` : ""}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={deleteMemberFromWorkspace}
+        open={Boolean(deleteTarget)}
+        title="Delete member from workspace?"
+      />
     </div>
   );
 }
