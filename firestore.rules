@@ -1,0 +1,111 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function memberDoc() {
+      return get(/databases/$(database)/documents/members/$(request.auth.token.email));
+    }
+
+    function isActiveMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/members/$(request.auth.token.email))
+        && memberDoc().data.active == true
+        && memberDoc().data.email == request.auth.token.email;
+    }
+
+    function isAdmin() {
+      return isActiveMember() && memberDoc().data.role == "admin";
+    }
+
+    match /members/{memberId} {
+      allow get: if isActiveMember()
+        || (signedIn() && memberId == request.auth.token.email);
+      allow list: if isActiveMember();
+      allow create: if signedIn()
+        && (
+          (
+            memberId == request.auth.token.email
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.role == "admin"
+            && request.resource.data.active == true
+          )
+          || isAdmin()
+        );
+      allow update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isActiveMember();
+      allow write: if isAdmin();
+    }
+
+    match /cycles/{cycleId} {
+      allow read: if isActiveMember();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    match /mealEntries/{entryId} {
+      allow read: if isActiveMember();
+      allow create: if isActiveMember()
+        && request.resource.data.createdBy == request.auth.token.email;
+      allow update: if isAdmin()
+        || (isActiveMember()
+          && resource.data.createdBy == request.auth.token.email
+          && resource.data.status == "pending"
+          && request.resource.data.status == "pending");
+      allow delete: if isAdmin()
+        || (isActiveMember()
+          && resource.data.createdBy == request.auth.token.email
+          && resource.data.status == "pending");
+    }
+
+    match /dailyMeals/{entryId} {
+      allow read: if isActiveMember();
+      allow create: if isActiveMember()
+        && request.resource.data.createdBy == request.auth.token.email;
+      allow update: if isAdmin()
+        || (isActiveMember()
+          && resource.data.createdBy == request.auth.token.email
+          && resource.data.status == "pending"
+          && request.resource.data.status == "pending");
+      allow delete: if isAdmin()
+        || (isActiveMember()
+          && resource.data.createdBy == request.auth.token.email
+          && resource.data.status == "pending");
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isActiveMember();
+      allow create: if isActiveMember()
+        && request.resource.data.createdBy == request.auth.token.email;
+      allow update: if isAdmin()
+        || (isActiveMember()
+          && resource.data.createdBy == request.auth.token.email
+          && resource.data.status == "pending"
+          && request.resource.data.status == "pending");
+      allow delete: if isAdmin()
+        || (isActiveMember()
+          && resource.data.createdBy == request.auth.token.email
+          && resource.data.status == "pending");
+    }
+
+    match /settlements/{settlementId} {
+      allow read: if isActiveMember();
+      allow create: if isActiveMember()
+        && request.resource.data.createdBy == request.auth.token.email;
+      allow update, delete: if isAdmin();
+    }
+
+    match /deposits/{depositId} {
+      allow read: if isActiveMember();
+      allow create: if isActiveMember()
+        && request.resource.data.createdBy == request.auth.token.email;
+      allow update, delete: if isAdmin();
+    }
+  }
+}
