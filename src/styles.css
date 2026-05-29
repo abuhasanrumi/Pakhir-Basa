@@ -119,6 +119,14 @@ p {
   position: relative;
 }
 
+.sidebar-toggle {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
 /* Sidebar Styling */
 .sidebar {
   background: var(--sidebar-bg);
@@ -2352,24 +2360,66 @@ td strong {
 @media (max-width: 1024px) {
   .app {
     grid-template-columns: 1fr;
+    overflow-x: hidden;
   }
 
   .sidebar {
-    height: auto;
-    position: static;
-    padding: 24px;
+    background: rgba(9, 14, 12, 0.98);
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: 0;
+    box-shadow: none;
+    height: 100vh;
+    padding: 24px 16px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    transform: translateX(100%);
+    transition: transform 220ms ease;
+    width: min(82vw, 300px);
+    z-index: 40;
+  }
+
+  .sidebar.sidebar--open {
+    transform: translateX(0);
+  }
+
+  .sidebar-toggle {
+    align-items: center;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(18, 40, 30, 0.08);
+    border-radius: 999px;
+    box-shadow: 0 10px 30px rgba(18, 40, 30, 0.16);
+    color: var(--primary);
+    display: inline-flex;
+    height: 46px;
+    justify-content: center;
+    position: fixed;
+    right: 16px;
+    top: 16px;
+    width: 46px;
+    z-index: 50;
+  }
+
+  .sidebar-backdrop {
+    background: rgba(7, 12, 9, 0.52);
+    display: block;
+    inset: 0;
+    position: fixed;
+    z-index: 30;
   }
 
   .nav {
-    flex-direction: row;
-    flex-wrap: wrap;
+    flex-direction: column;
+    flex-wrap: nowrap;
     gap: 8px;
+    width: 100%;
   }
 
   .nav-item {
-    flex: 1;
-    min-width: 140px;
-    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    width: 100%;
     padding: 10px 12px;
   }
 
@@ -2385,7 +2435,8 @@ td strong {
   }
 
   .main {
-    padding: 32px;
+    padding: 28px 24px;
+    max-width: none;
   }
 
   .metrics {
@@ -2406,17 +2457,65 @@ td strong {
     min-height: 40vh;
     padding: 40px;
   }
+
+  .summary-note {
+    justify-content: flex-start;
+  }
+
+  .member-summary__heading,
+  .history-item__header,
+  .no-cycle-hero,
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-member-row__name,
+  .history-member-row__metrics,
+  .member-summary__heading,
+  .calendar-toolbar,
+  .meal-day-summary,
+  .meal-session-grid,
+  .no-cycle-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .history-member-row__name,
+  .history-member-row__metrics {
+    justify-items: start;
+  }
+
+  .history-member-row__metrics span,
+  .meal-session-summary span {
+    width: 100%;
+  }
+
+  .panel,
+  .history-item,
+  .metric,
+  .login-panel,
+  .meal-session-box,
+  .no-cycle-panel {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
   .main {
-    padding: 24px 16px;
+    padding: 20px 14px;
   }
 
   .topbar {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
+    padding-top: 40px;
   }
 
   .topbar h1 {
@@ -2440,6 +2539,92 @@ td strong {
 
   .toolbar-band button:last-child {
     margin-left: 0;
+  }
+
+  .metrics,
+  .history-kpis,
+  .history-member-row__metrics,
+  .meal-day-summary,
+  .meal-session-grid,
+  .no-cycle-overview,
+  .summary-kpis,
+  .edit-portions,
+  .calendar-grid,
+  .member-summary__heading,
+  .history-item__header,
+  .meal-member-row,
+  .session-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .member-summary .table-wrap,
+  .member-summary .summary-table {
+    display: block;
+  }
+
+  .summary-table th,
+  .summary-table td {
+    padding: 12px 14px;
+    font-size: 0.88rem;
+  }
+
+  .history-item,
+  .no-cycle-panel,
+  .login-panel,
+  .panel {
+    padding: 18px;
+  }
+
+  .metric,
+  .history-item,
+  .panel,
+  .login-panel,
+  .meal-session-box,
+  .no-cycle-panel {
+    border-radius: 20px;
+    width: 100%;
+    min-width: 0;
+    box-shadow: none;
+  }
+
+  .metric:hover,
+  .history-item:hover,
+  .panel:hover,
+  .login-panel:hover,
+  .meal-session-box:hover,
+  .no-cycle-panel:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .history-member-row__metrics {
+    gap: 6px;
+  }
+
+  .history-member-row__metrics span {
+    font-size: 0.8rem;
+  }
+
+  .calendar-toolbar input {
+    max-width: none;
+    width: 100%;
+  }
+
+  .meal-session-box {
+    padding: 16px;
+  }
+
+  .meal-session-header,
+  .meal-member-row,
+  .history-member-row__name,
+  .history-item__header,
+  .confirm-modal__header {
+    align-items: flex-start;
+  }
+
+  .no-cycle-hero__badge {
+    width: 100%;
+    justify-content: center;
   }
 
   .entry-row {

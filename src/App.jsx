@@ -6,6 +6,7 @@ import {
   Check,
   CircleDollarSign,
   LogOut,
+  Menu,
   Pencil,
   Plus,
   ReceiptText,
@@ -15,6 +16,7 @@ import {
   Trash2,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -123,6 +125,7 @@ export function App() {
   const [currentCycle, setCurrentCycle] = useState(null);
   const [selectedHistoryCycleId, setSelectedHistoryCycleId] = useState("");
   const [activeView, setActiveView] = useState("dashboard");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -161,6 +164,7 @@ export function App() {
           setMember(appMember);
           setCurrentCycle(await getOpenCycle());
           setSelectedHistoryCycleId("");
+          setMobileSidebarOpen(false);
         }
 
         setBootstrapping(false);
@@ -260,8 +264,10 @@ export function App() {
         cycles={cycles}
         selectedHistoryCycleId={selectedHistoryCycleId}
         setCurrentCycle={setCurrentCycle}
+        setMobileSidebarOpen={setMobileSidebarOpen}
         setSelectedHistoryCycleId={setSelectedHistoryCycleId}
         setMessage={setMessage}
+        sidebarOpen={mobileSidebarOpen}
         user={user}
       />
     );
@@ -278,7 +284,17 @@ export function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <button
+        className="sidebar-toggle"
+        type="button"
+        aria-label={mobileSidebarOpen ? "Close menu" : "Open menu"}
+        aria-expanded={mobileSidebarOpen}
+        onClick={() => setMobileSidebarOpen((current) => !current)}
+      >
+        {mobileSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+      {mobileSidebarOpen ? <div className="sidebar-backdrop" role="presentation" onClick={() => setMobileSidebarOpen(false)} /> : null}
+      <aside className={mobileSidebarOpen ? "sidebar sidebar--open" : "sidebar"}>
         <div className="brand">
           <div className="brand-mark">PB</div>
           <div>
@@ -291,7 +307,14 @@ export function App() {
           {navigation.map((item) => {
             const Icon = item.icon;
             return (
-              <button className={activeView === item.id ? "nav-item active" : "nav-item"} key={item.id} onClick={() => setActiveView(item.id)}>
+              <button
+                className={activeView === item.id ? "nav-item active" : "nav-item"}
+                key={item.id}
+                onClick={() => {
+                  setActiveView(item.id);
+                  setMobileSidebarOpen(false);
+                }}
+              >
                 <Icon size={18} />
                 <span>{item.label}</span>
                 {item.id === "dashboard" && pendingCount > 0 ? <b>{pendingCount}</b> : null}
@@ -342,6 +365,7 @@ export function App() {
             setActiveView={setActiveView}
             setCurrentCycle={setCurrentCycle}
             setSelectedHistoryCycleId={setSelectedHistoryCycleId}
+            setMobileSidebarOpen={setMobileSidebarOpen}
             setMessage={setMessage}
             totals={totals}
             deposits={deposits}
@@ -435,7 +459,7 @@ function Shell({ message }) {
   );
 }
 
-function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCurrentCycle, setMessage, setSelectedHistoryCycleId, user }) {
+function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
   const [sidebarView, setSidebarView] = useState(selectedHistoryCycleId ? "history" : "create");
   const [form, setForm] = useState({
     name: new Date().toLocaleString("en", { month: "long", year: "numeric" }),
@@ -468,12 +492,23 @@ function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCur
     );
     setCurrentCycle(createdCycle);
     setSelectedHistoryCycleId(createdCycle.id);
+    setMobileSidebarOpen(false);
     setMessage("New month started.");
   }
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <button
+        className="sidebar-toggle"
+        type="button"
+        aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+        aria-expanded={sidebarOpen}
+        onClick={() => setMobileSidebarOpen((current) => !current)}
+      >
+        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+      {sidebarOpen ? <div className="sidebar-backdrop" role="presentation" onClick={() => setMobileSidebarOpen(false)} /> : null}
+      <aside className={sidebarOpen ? "sidebar sidebar--open" : "sidebar"}>
         <div className="brand">
           <div className="brand-mark">PB</div>
           <div>
@@ -483,11 +518,11 @@ function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCur
         </div>
         {isAdmin ? (
           <nav className="nav no-cycle-nav">
-            <button className={sidebarView === "create" ? "nav-item active" : "nav-item"} onClick={() => setSidebarView("create")}>
+            <button className={sidebarView === "create" ? "nav-item active" : "nav-item"} onClick={() => { setSidebarView("create"); setMobileSidebarOpen(false); }}>
               <Plus size={18} />
               <span>Create month</span>
             </button>
-            <button className={sidebarView === "history" ? "nav-item active" : "nav-item"} onClick={() => setSidebarView("history")}>
+            <button className={sidebarView === "history" ? "nav-item active" : "nav-item"} onClick={() => { setSidebarView("history"); setMobileSidebarOpen(false); }}>
               <Banknote size={18} />
               <span>Cycle history</span>
               {cycles.filter((cycle) => cycle.status === "closed").length ? <b>{cycles.filter((cycle) => cycle.status === "closed").length}</b> : null}
@@ -573,7 +608,7 @@ function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCur
   );
 }
 
-function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, members, pendingCount, setActiveView, setCurrentCycle, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
+function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today());
   const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
@@ -598,6 +633,7 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
 
     setActiveView("history");
     setSelectedHistoryCycleId(currentCycle.id);
+    setMobileSidebarOpen(false);
     setCurrentCycle(null);
     setConfirmClose(false);
     setMessage("Cycle closed. Admin can create the next month when ready.");
