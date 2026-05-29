@@ -121,6 +121,7 @@ export function App() {
   const [user, setUser] = useState(null);
   const [member, setMember] = useState(null);
   const [currentCycle, setCurrentCycle] = useState(null);
+  const [selectedHistoryCycleId, setSelectedHistoryCycleId] = useState("");
   const [activeView, setActiveView] = useState("dashboard");
   const [bootstrapping, setBootstrapping] = useState(true);
   const [message, setMessage] = useState("");
@@ -159,6 +160,7 @@ export function App() {
         if (appMember?.active) {
           setMember(appMember);
           setCurrentCycle(await getOpenCycle());
+          setSelectedHistoryCycleId("");
         }
 
         setBootstrapping(false);
@@ -256,7 +258,9 @@ export function App() {
         isAdmin={isAdmin}
         member={member}
         cycles={cycles}
+        selectedHistoryCycleId={selectedHistoryCycleId}
         setCurrentCycle={setCurrentCycle}
+        setSelectedHistoryCycleId={setSelectedHistoryCycleId}
         setMessage={setMessage}
         user={user}
       />
@@ -337,6 +341,7 @@ export function App() {
             pendingCount={pendingCount}
             setActiveView={setActiveView}
             setCurrentCycle={setCurrentCycle}
+            setSelectedHistoryCycleId={setSelectedHistoryCycleId}
             setMessage={setMessage}
             totals={totals}
             deposits={deposits}
@@ -377,7 +382,7 @@ export function App() {
           />
         ) : null}
         {activeView === "members" && isAdmin ? <Members members={members} setMessage={setMessage} /> : null}
-        {activeView === "history" ? <History cycles={cycles} /> : null}
+        {activeView === "history" ? <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
       </main>
     </div>
   );
@@ -392,25 +397,6 @@ function SetupError({ message }) {
       <button className="secondary" onClick={signOutUser}>
         Sign out
       </button>
-    </div>
-  );
-}
-
-function Shell({ message }) {
-  return (
-    <div className="center-screen">
-      <div className="loader" />
-      <p>{message}</p>
-    </div>
-  );
-}
-
-function SetupScreen() {
-  return (
-    <div className="center-screen setup">
-      <Shield size={42} />
-      <h1>Firebase config needed</h1>
-      <p>Create a Firebase web app, copy `.env.example` to `.env`, fill the `VITE_FIREBASE_*` values, then restart the dev server.</p>
     </div>
   );
 }
@@ -437,21 +423,20 @@ function LoginScreen() {
   );
 }
 
-function AccessBlocked({ user }) {
+function Shell({ message }) {
   return (
     <div className="center-screen setup">
-      <Shield size={42} />
-      <h1>Access not enabled</h1>
-      <p>{user.email} is not in this household member list yet. Ask an admin to add this Gmail address.</p>
-      <button className="secondary" onClick={signOutUser}>
-        Sign out
-      </button>
+      <div className="loading-card">
+        <Soup size={32} />
+        <h1>Loading household data</h1>
+        <p>{message || "Please wait while the current month is prepared."}</p>
+      </div>
     </div>
   );
 }
 
-function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, user }) {
-  const [sidebarView, setSidebarView] = useState("create");
+function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCurrentCycle, setMessage, setSelectedHistoryCycleId, user }) {
+  const [sidebarView, setSidebarView] = useState(selectedHistoryCycleId ? "history" : "create");
   const [form, setForm] = useState({
     name: new Date().toLocaleString("en", { month: "long", year: "numeric" }),
     startDate: today(),
@@ -470,6 +455,7 @@ function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, u
       createdBy: member.id,
     };
     const ref = await addRecord("cycles", cycle);
+    const createdCycle = { id: ref.id, ...cycle };
     await setDoc(
       doc(db, "settings", "main"),
       {
@@ -480,7 +466,8 @@ function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, u
       },
       { merge: true },
     );
-    setCurrentCycle({ id: ref.id, ...cycle });
+    setCurrentCycle(createdCycle);
+    setSelectedHistoryCycleId(createdCycle.id);
     setMessage("New month started.");
   }
 
@@ -520,15 +507,41 @@ function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, u
       </aside>
       <main className="main no-cycle-main">
         {isAdmin && sidebarView === "history" ? (
-          <History cycles={cycles} />
+          <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} />
         ) : (
           <section className="panel no-cycle-panel">
-            <div className="section-heading">
-              <h2>No active month</h2>
-              <p>{isAdmin ? "Create a month and choose how meal cost will be calculated." : "An admin needs to create the current month before entries can be added."}</p>
+            <div className="no-cycle-hero">
+              <div className="no-cycle-hero__copy">
+                <span className="eyebrow">Month setup</span>
+                <h2>No active month</h2>
+                <p>{isAdmin ? "Create a new month to start tracking meals, deposits, and expenses." : "A new month will appear here once it is created."}</p>
+              </div>
+              <div className="no-cycle-hero__badge">
+                <CalendarCheck size={18} />
+                <span>Ready when you are</span>
+              </div>
             </div>
+
+            <div className="no-cycle-overview">
+              <article>
+                <Soup size={18} />
+                <strong>Meals</strong>
+                <span>Track lunch and dinner entries in one place.</span>
+              </article>
+              <article>
+                <Wallet size={18} />
+                <strong>Deposits</strong>
+                <span>Keep advances and shared cash visible.</span>
+              </article>
+              <article>
+                <Banknote size={18} />
+                <strong>History</strong>
+                <span>Review closed cycles when the month ends.</span>
+              </article>
+            </div>
+
             {isAdmin ? (
-              <form className="form-grid" onSubmit={startCycle}>
+              <form className="form-grid no-cycle-form" onSubmit={startCycle}>
                 <label>
                   Month name
                   <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -548,7 +561,7 @@ function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, u
                   Default meal rate
                   <input min="1" type="number" value={form.mealRate} onChange={(event) => setForm({ ...form, mealRate: event.target.value })} />
                 </label>
-                <button className="primary" type="submit">
+                <button className="primary no-cycle-form__submit" type="submit">
                   <Plus size={18} /> Create month
                 </button>
               </form>
@@ -560,7 +573,7 @@ function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, u
   );
 }
 
-function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, members, pendingCount, setActiveView, setCurrentCycle, setMessage, totals, deposits, messCash, settings }) {
+function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, members, pendingCount, setActiveView, setCurrentCycle, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today());
   const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
@@ -583,6 +596,8 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
       snapshot,
     });
 
+    setActiveView("history");
+    setSelectedHistoryCycleId(currentCycle.id);
     setCurrentCycle(null);
     setConfirmClose(false);
     setMessage("Cycle closed. Admin can create the next month when ready.");
@@ -962,24 +977,6 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     return () => window.clearTimeout(timeoutId);
   }, [mealFormError]);
 
-  useEffect(() => {
-    if (!mealFormError) return;
-    setMealFormError("");
-  }, [
-    date,
-    lunchRate,
-    lunchOrdered,
-    lunchPortions,
-    lunchSkipped,
-    dinnerRate,
-    dinnerOrdered,
-    dinnerPortions,
-    dinnerSkipped,
-    editingRates.lunch,
-    editingRates.dinner,
-    mealFormError,
-  ]);
-
   const isCalculated = getMealRateMode(settings) === "calculated";
   const sessionRate = isCalculated ? getCalculatedMealRate({ mealEntries, expenses, settings }) : Number(settings.mealRate || 70);
   const canEditExisting = isAdmin || (existingDailyMeal?.createdBy === member.id && existingDailyMeal?.status === "pending");
@@ -1117,7 +1114,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
     if (!lunchSkipped && !lunchEaters.length && !dinnerSkipped && !dinnerEaters.length) {
       setIsEditingDay(true);
-      setMealFormError("Add your own portion for lunch or dinner, or mark the skipped session as No lunch / No dinner.");
+      setMealFormError("Please add lunch or dinner portions for at least one member.");
       return;
     }
 
@@ -2019,8 +2016,34 @@ function MemberNameEditor({ person, setMessage }) {
   );
 }
 
-function History({ cycles }) {
+function History({ cycles, onSelectCycle, selectedCycleId }) {
   const closed = cycles.filter((cycle) => cycle.status === "closed");
+  const selectedCycle = closed.find((cycle) => cycle.id === selectedCycleId) || closed[0] || null;
+  const cycleMeals = selectedCycle?.snapshot?.meals || [];
+  const cycleExpenses = selectedCycle?.snapshot?.expenses || [];
+  const cycleDeposits = selectedCycle?.snapshot?.deposits || [];
+  const dates = cycleMeals.reduce((acc, entry) => {
+    const bucket = acc[entry.date] || { date: entry.date, meals: [], mealTotal: 0, expenseTotal: 0, depositTotal: 0 };
+    bucket.meals.push(entry);
+    bucket.mealTotal = taka(bucket.mealTotal + Number(entry.boxCount || 0) * Number(entry.rate || 0));
+    acc[entry.date] = bucket;
+    return acc;
+  }, {});
+
+  cycleExpenses.forEach((expense) => {
+    const bucket = dates[expense.date] || { date: expense.date, meals: [], mealTotal: 0, expenseTotal: 0, depositTotal: 0 };
+    bucket.expenseTotal = taka(bucket.expenseTotal + Number(expense.amount || 0));
+    dates[expense.date] = bucket;
+  });
+
+  cycleDeposits.forEach((deposit) => {
+    const bucket = dates[deposit.date] || { date: deposit.date, meals: [], mealTotal: 0, expenseTotal: 0, depositTotal: 0 };
+    bucket.depositTotal = taka(bucket.depositTotal + Number(deposit.amount || 0));
+    dates[deposit.date] = bucket;
+  });
+
+  const sortedDates = Object.values(dates).sort((left, right) => String(left.date).localeCompare(String(right.date)));
+
   return (
     <section className="panel history-panel">
       <div className="section-heading">
@@ -2028,9 +2051,68 @@ function History({ cycles }) {
         <h2>Closed cycles</h2>
         <p>Each closed cycle keeps a balance snapshot with per-member meals, deposits, costs, and balance.</p>
       </div>
+      {selectedCycle ? (
+        <div className="history-item history-item--detail">
+          <div className="history-item__header">
+            <div>
+              <strong>{selectedCycle.name || `${selectedCycle.startDate} to ${selectedCycle.endDate || "closing"}`}</strong>
+              <span>{selectedCycle.startDate} to {selectedCycle.endDate || "closed"}</span>
+            </div>
+            {closed.length > 1 ? (
+              <select value={selectedCycle.id} onChange={(event) => onSelectCycle?.(event.target.value)}>
+                {closed.map((cycle) => (
+                  <option key={cycle.id} value={cycle.id}>
+                    {cycle.name || `${cycle.startDate} to ${cycle.endDate || "closing"}`}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+
+          <div className="history-kpis">
+            <article>
+              <span>Total meals</span>
+              <strong>{formatTk(selectedCycle.snapshot?.totals?.meals || 0)}</strong>
+            </article>
+            <article>
+              <span>Total deposits</span>
+              <strong>{formatTk(selectedCycle.snapshot?.totals?.deposits || 0)}</strong>
+            </article>
+            <article>
+              <span>Total expenses</span>
+              <strong>{formatTk(selectedCycle.snapshot?.totals?.expenses || 0)}</strong>
+            </article>
+            <article>
+              <span>Meal rate</span>
+              <strong>{formatTk(selectedCycle.snapshot?.totals?.calculatedMealRate || selectedCycle.snapshot?.totals?.defaultMealRate || 0)}</strong>
+            </article>
+          </div>
+
+          <div className="history-members">
+            {sortedDates.length ? sortedDates.map((day) => (
+              <div className="history-member-row" key={day.date}>
+                <div className="history-member-row__name">
+                  <strong>{day.date}</strong>
+                  <span>{day.meals.length} meal entr{day.meals.length === 1 ? "y" : "ies"}</span>
+                </div>
+                <div className="history-member-row__metrics">
+                  <span><em>Meal total</em>{formatTk(day.mealTotal)}</span>
+                  <span><em>Expenses</em>{formatTk(day.expenseTotal)}</span>
+                  <span><em>Deposits</em>{formatTk(day.depositTotal)}</span>
+                </div>
+                <div className="history-member-row__metrics">
+                  {day.meals.map((entry) => (
+                    <span key={entry.id}><em>{entry.session}</em>{entry.boxCount} ordered · {formatTk(entry.rate)} rate</span>
+                  ))}
+                </div>
+              </div>
+            )) : <p className="empty">This cycle has no stored date-level entries.</p>}
+          </div>
+        </div>
+      ) : null}
       <div className="history-grid">
         {closed.map((cycle) => (
-          <article className="history-item" key={cycle.id}>
+          <article className={cycle.id === selectedCycle?.id ? "history-item active" : "history-item"} key={cycle.id} onClick={() => onSelectCycle?.(cycle.id)} role="button" tabIndex={0}>
             <div className="history-item__header">
               <div>
                 <strong>{cycle.name || `${cycle.startDate} to ${cycle.endDate || "closing"}`}</strong>

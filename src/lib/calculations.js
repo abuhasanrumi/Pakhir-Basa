@@ -167,6 +167,8 @@ export function buildCycleSnapshot({
   const ledger = calculateLedger({ members, mealEntries, expenses, deposits, settings });
   
   const approvedMeals = mealEntries.filter((m) => m.status === "approved");
+  const approvedExpenses = expenses.filter((expense) => expense.status === "approved");
+  const approvedDeposits = deposits.filter((deposit) => deposit.status === "approved");
   const calculatedRate = getCalculatedMealRate({ mealEntries, expenses, settings });
   const mealTotal = approvedMeals.reduce((sum, entry) => {
     const rateToUse = getMealRateMode(settings) === "calculated" ? calculatedRate : getMealEntryRate(entry, settings);
@@ -177,15 +179,16 @@ export function buildCycleSnapshot({
     totals: {
       meals: taka(mealTotal),
       expenses: taka(
-        expenses
-          .filter((expense) => expense.status === "approved")
-          .reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+        approvedExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
       ),
-      deposits: taka((deposits || []).filter((d) => d.status === "approved").reduce((sum, d) => sum + Number(d.amount || 0), 0)),
+      deposits: taka(approvedDeposits.reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0)),
       mealRateMode: getMealRateMode(settings),
       calculatedMealRate: calculatedRate,
       defaultMealRate: Number(settings?.mealRate) || 70,
     },
+    meals: approvedMeals,
+    expenses: approvedExpenses,
+    deposits: approvedDeposits,
     ledger,
   };
 }
