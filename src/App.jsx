@@ -5,11 +5,11 @@ import {
   CalendarCheck,
   Check,
   CircleDollarSign,
-  Pencil,
-  RotateCcw,
   LogOut,
+  Pencil,
   Plus,
   ReceiptText,
+  RotateCcw,
   Shield,
   Soup,
   Trash2,
@@ -23,8 +23,8 @@ import {
   bootstrapAdmin,
   db,
   deleteRecord,
-  getOpenCycle,
   getMemberByEmail,
+  getOpenCycle,
   hasFirebaseConfig,
   initialAdminEmail,
   setRecord,
@@ -207,14 +207,18 @@ export function App() {
   const totals = useMemo(() => {
     const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
     const approvedExpenses = isCalculatedMonth ? expenses.filter((expense) => expense.status === "approved") : [];
+    const mealRateMode = getMealRateMode(settings);
 
     const approvedBazaar = approvedExpenses.filter((e) => e.category === "bazaar");
     const totalBazaar = approvedBazaar.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
     const totalBoxes = approvedMeals.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0);
     const calculatedRate = getCalculatedMealRate({ mealEntries, expenses, settings });
-    const activeRate = getMealRateMode(settings) === "calculated" ? calculatedRate : Number(settings.mealRate) || 70;
-    const mealTotal = approvedMeals.reduce((sum, entry) => sum + Number(entry.boxCount || 0) * activeRate, 0);
+    const mealTotal = approvedMeals.reduce((sum, entry) => {
+      const rate = mealRateMode === "calculated" ? calculatedRate : getMealEntryRate(entry, settings);
+      return sum + Number(entry.boxCount || 0) * rate;
+    }, 0);
+    const activeRate = totalBoxes > 0 ? mealTotal / totalBoxes : mealRateMode === "calculated" ? calculatedRate : Number(settings.mealRate) || 70;
 
     return {
       meals: taka(mealTotal),
@@ -583,21 +587,15 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
           icon={CalendarCheck}
         />
         <Metric
-          label="Meal Rate"
+          label="Running Meal Rate"
           value={formatTk(totals.mealRate)}
-          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Static month rate"}
+          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Weighted by approved meal entries"}
           icon={CircleDollarSign}
         />
         <Metric
           label="Total Meal Cost"
-          value={formatTk(totals.mealRate * totals.boxes)}
-          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Static month rate"}
-          icon={CircleDollarSign}
-        />
-        <Metric
-          label="Running Meal Rate"
-          value={formatTk((totals.mealRate * totals.boxes) / totals.boxes)}
-          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Static month rate"}
+          value={formatTk(totals.meals)}
+          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Approved meal entries at their recorded rates"}
           icon={CircleDollarSign}
         />
       </section>

@@ -73,6 +73,30 @@ describe("expense and ledger calculation", () => {
     expect(ledger.tuhin.balance).toBe(-35);
   });
 
+  it("uses each approved meal entry rate when the month is static", () => {
+    const ledger = calculateLedger({
+      members,
+      settings: { mealRateMode: "static", mealRate: 70 },
+      mealEntries: [
+        {
+          status: "approved",
+          boxCount: 2,
+          rate: 70,
+          eaters: ["rumi", "sami"],
+        },
+        {
+          status: "approved",
+          boxCount: 2,
+          rate: 90,
+          eaters: ["rumi", "sami"],
+        },
+      ],
+    });
+
+    expect(ledger.rumi.mealCost).toBe(160);
+    expect(ledger.sami.mealCost).toBe(160);
+  });
+
   it("calculates meal rate from approved meal expenses and ordered meals", () => {
     const ledger = calculateLedger({
       members,

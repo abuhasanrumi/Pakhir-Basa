@@ -22,7 +22,7 @@ export function getMealEntryRate(entry = {}, settings = {}, context = {}) {
   if (getMealRateMode(settings) === "calculated") {
     return getCalculatedMealRate({ ...context, settings });
   }
-  return Number(settings.mealRate) ? fallbackRate : Number(entry.rate) || fallbackRate;
+  return Number(entry.rate) || fallbackRate;
 }
 
 export function splitMeal(entry, rateOverride) {
