@@ -83,8 +83,10 @@ export function calculateLedger({
     };
     return acc;
   }, {});
+  const memberIds = new Set(members.map((member) => member.id));
 
   const ensure = (memberId) => {
+    if (!memberIds.has(memberId)) return null;
     if (!ledger[memberId]) {
       ledger[memberId] = {
         memberId,
@@ -106,6 +108,7 @@ export function calculateLedger({
     .forEach((d) => {
       const amount = taka(d.amount);
       const row = ensure(d.memberId);
+      if (!row) return;
       row.deposits = taka(row.deposits + amount);
     });
 
@@ -123,6 +126,7 @@ export function calculateLedger({
       const totalWeight = Object.values(weights).reduce((sum, value) => sum + value, 0);
       Object.entries(shares).forEach(([memberId, amount]) => {
         const row = ensure(memberId);
+        if (!row) return;
         const mealCount = totalWeight > 0 ? (Number(entry.boxCount || 0) * (weights[memberId] || 0)) / totalWeight : 0;
         row.mealCount = taka(row.mealCount + mealCount);
         row.mealCost = taka(row.mealCost + amount);
@@ -143,6 +147,7 @@ export function calculateLedger({
       const shares = splitExpense(expense);
       Object.entries(shares).forEach(([memberId, share]) => {
         const row = ensure(memberId);
+        if (!row) return;
         row.expenseCost = taka(row.expenseCost + share);
         row.owed = taka(row.owed + share);
       });

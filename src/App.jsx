@@ -195,7 +195,9 @@ export function App() {
     mealRate: currentCycle?.mealRate ?? settingsDoc.mealRate ?? 70,
     mealRateMode: currentCycle?.mealRateMode || settingsDoc.mealRateMode || settingsDoc.mealRateMethod || "static",
   };
-  const activeMembers = members.filter((item) => item.active);
+  const householdActiveMembers = members.filter((item) => item.active);
+  const cycleMemberIds = currentCycle?.memberIds || [];
+  const activeMembers = householdActiveMembers.filter((item) => cycleMemberIds.includes(item.id));
   const isCalculatedMonth = getMealRateMode(settings) === "calculated";
 
   useEffect(() => {
@@ -261,6 +263,7 @@ export function App() {
       <NoCycleScreen
         isAdmin={isAdmin}
         member={member}
+        members={members}
         cycles={cycles}
         selectedHistoryCycleId={selectedHistoryCycleId}
         setCurrentCycle={setCurrentCycle}
@@ -337,7 +340,14 @@ export function App() {
 
       <main className="main">
         <header className="topbar">
-          <div>
+          <div className="topbar-brand">
+            <div className="topbar-logo">PB</div>
+            <div>
+              <strong>Pakhir Basa</strong>
+              <span>Meal & Mess Tracker</span>
+            </div>
+          </div>
+          <div className="topbar-page-title">
             <p>{currentCycle?.name || "Current Cycle"}</p>
             <h1>{navigation.find((item) => item.id === activeView)?.label || "Dashboard"}</h1>
           </div>
@@ -405,7 +415,7 @@ export function App() {
             setMessage={setMessage}
           />
         ) : null}
-        {activeView === "members" && isAdmin ? <Members members={members} setMessage={setMessage} /> : null}
+        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} cycleMembers={activeMembers} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
         {activeView === "history" ? <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
       </main>
     </div>
@@ -451,31 +461,74 @@ function Shell({ message }) {
   return (
     <div className="center-screen setup">
       <div className="loading-card">
-        <Soup size={32} />
-        <h1>Loading household data</h1>
-        <p>{message || "Please wait while the current month is prepared."}</p>
+        <div className="loading-brand">
+          <div className="loading-brand__mark">PB</div>
+          <div>
+            <strong>Pakhir Basa</strong>
+            <span>Meal & Mess Tracker</span>
+          </div>
+        </div>
+        <div className="loading-orbit" aria-hidden="true">
+          <Soup size={30} />
+        </div>
+        <div className="loading-copy">
+          <span className="eyebrow">Preparing workspace</span>
+          <h1>Loading household data</h1>
+          <p>{message || "Checking your account, members, and current month."}</p>
+        </div>
+        <div className="loading-progress" aria-hidden="true">
+          <span />
+        </div>
       </div>
     </div>
   );
 }
 
-function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
+function NoCycleScreen({ cycles, isAdmin, member, members, selectedHistoryCycleId, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
+  const selectableMembers = members
+    .filter((item) => item.active)
+    .sort((left, right) => {
+      if (left.id === member.id) return -1;
+      if (right.id === member.id) return 1;
+      return String(left.name || left.email).localeCompare(String(right.name || right.email));
+    });
   const [sidebarView, setSidebarView] = useState(selectedHistoryCycleId ? "history" : "create");
   const [form, setForm] = useState({
     name: new Date().toLocaleString("en", { month: "long", year: "numeric" }),
     startDate: today(),
     rateMode: "static",
     mealRate: 70,
+    memberIds: [],
   });
+
+  useEffect(() => {
+    setForm((current) => {
+      if (current.memberIds.length || !selectableMembers.length) return current;
+      return { ...current, memberIds: selectableMembers.some((person) => person.id === member.id) ? [member.id] : [selectableMembers[0].id] };
+    });
+  }, [member.id, selectableMembers]);
+
+  function toggleCycleMember(memberId) {
+    if (memberId === member.id) return;
+    setForm((current) => {
+      const hasMember = current.memberIds.includes(memberId);
+      return {
+        ...current,
+        memberIds: hasMember ? current.memberIds.filter((id) => id !== memberId) : [...current.memberIds, memberId],
+      };
+    });
+  }
 
   async function startCycle(event) {
     event.preventDefault();
+    if (!form.memberIds.length) return setMessage("Select at least one member for this month.");
     const cycle = {
       name: form.name || "Current Month",
       status: "open",
       startDate: form.startDate,
       mealRateMode: form.rateMode,
       mealRate: Number(form.mealRate) || 70,
+      memberIds: form.memberIds,
       createdBy: member.id,
     };
     const ref = await addRecord("cycles", cycle);
@@ -596,6 +649,27 @@ function NoCycleScreen({ cycles, isAdmin, member, selectedHistoryCycleId, setCur
                   Default meal rate
                   <input min="1" type="number" value={form.mealRate} onChange={(event) => setForm({ ...form, mealRate: event.target.value })} />
                 </label>
+                <div className="cycle-member-picker">
+                  <div>
+                    <strong>Members for this month</strong>
+                    <span>Only selected members will be counted in meals, deposits, and balances.</span>
+                  </div>
+                  <div className="member-picker">
+                    {selectableMembers.map((person) => (
+                      <button
+                        className={form.memberIds.includes(person.id) ? "chip selected" : "chip"}
+                        key={person.id}
+                        disabled={person.id === member.id}
+                        type="button"
+                        onClick={() => toggleCycleMember(person.id)}
+                      >
+                        {form.memberIds.includes(person.id) ? <Check size={15} /> : null}
+                        <span>{person.name}</span>
+                        {person.id === member.id ? <small>Admin</small> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button className="primary no-cycle-form__submit" type="submit">
                   <Plus size={18} /> Create month
                 </button>
@@ -688,24 +762,29 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
         <button className="secondary" onClick={() => setActiveView("deposits")}>
           <Plus size={18} /> Deposit / Advance
         </button>
-        {isAdmin ? (
-          <button
-            className="danger"
-            onClick={() => setConfirmClose(true)}
-          >
-            Close current cycle
-          </button>
-        ) : null}
       </section>
 
       <MemberSummaryTable isCalculatedMonth={isCalculatedMonth} ledger={ledger} members={members} mealStats={memberMealStats} />
       <MealCalendar activeMembers={activeMembers} mealsByDate={mealsByDate} selectedDate={selectedDate} setSelectedDate={setSelectedDate} settings={settings} activeRate={totals.mealRate} />
+      {isAdmin ? (
+        <section className="admin-danger-zone">
+          <div>
+            <span className="eyebrow">Admin controls</span>
+            <h2>Close current cycle</h2>
+            <p>Finalize this month, save the closing snapshot, and move the household to cycle history.</p>
+          </div>
+          <button className="danger close-cycle-button" onClick={() => setConfirmClose(true)}>
+            Close cycle
+          </button>
+        </section>
+      ) : null}
       <ConfirmModal
         confirmLabel="Close cycle"
-        message="This will close the current month and move everyone to the no-active-month state until an admin creates the next month."
+        message="This will close the current month, save a read-only snapshot, and move everyone to the no-active-month state until an admin creates the next month."
         onCancel={() => setConfirmClose(false)}
         onConfirm={closeCycle}
         open={confirmClose}
+        requiredPhrase="close cycle"
         title="Close current cycle?"
       />
     </div>
@@ -1807,7 +1886,15 @@ function EntryEditModal({ entry, members, onCancel, onSave, type }) {
   );
 }
 
-function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, open, title }) {
+function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, open, requiredPhrase = "", title }) {
+  const [confirmationText, setConfirmationText] = useState("");
+  const requiresPhrase = Boolean(requiredPhrase);
+  const canConfirm = !requiresPhrase || confirmationText.trim() === requiredPhrase;
+
+  useEffect(() => {
+    if (open) setConfirmationText("");
+  }, [open]);
+
   if (!open) return null;
 
   return (
@@ -1815,23 +1902,40 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
       <div className="modal-card confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div className="confirm-modal__header">
           <div className="confirm-modal__icon" aria-hidden="true">
-            <Trash2 size={22} />
+            <Shield size={22} />
           </div>
           <div className="modal-heading confirm-modal__heading">
             <span className="eyebrow">Confirmation required</span>
             <h2 id="confirm-title">{title}</h2>
             <p>{message}</p>
           </div>
-          <div className="confirm-modal__pill">
-            <Shield size={14} />
-            <span>{confirmLabel}</span>
-          </div>
         </div>
         <div className="confirm-modal__footer">
-          <p>This keeps the action explicit before anything changes.</p>
+          <div className="confirm-modal__note">
+            <Trash2 size={16} />
+            <span>This action needs an explicit confirmation before anything changes.</span>
+          </div>
+          {requiresPhrase ? (
+            <label className="confirm-modal__phrase">
+              <span>
+                Type <strong>{requiredPhrase}</strong> to continue
+              </span>
+              <input
+                autoFocus
+                value={confirmationText}
+                onChange={(event) => setConfirmationText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && canConfirm) {
+                    event.preventDefault();
+                    onConfirm();
+                  }
+                }}
+              />
+            </label>
+          ) : null}
           <div className="modal-actions confirm-modal__actions">
             <button className="secondary" type="button" onClick={onCancel}>Cancel</button>
-            <button className="danger" type="button" onClick={onConfirm}>{confirmLabel}</button>
+            <button className="danger" disabled={!canConfirm} type="button" onClick={onConfirm}>{confirmLabel}</button>
           </div>
         </div>
       </div>
@@ -1943,8 +2047,11 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
   );
 }
 
-function Members({ members, setMessage }) {
+function Members({ currentCycle, cycleMembers, members, setCurrentCycle, setMessage }) {
   const [form, setForm] = useState({ name: "", email: "", role: "member" });
+  const householdActiveMembers = members.filter((item) => item.active);
+  const includedIds = currentCycle?.memberIds || [];
+  const availableForCycle = householdActiveMembers.filter((person) => !includedIds.includes(person.id));
 
   async function submitMember(event) {
     event.preventDefault();
@@ -1960,6 +2067,13 @@ function Members({ members, setMessage }) {
     });
     setForm({ name: "", email: "", role: "member" });
     setMessage("Member added.");
+  }
+
+  async function addMemberToCycle(memberId) {
+    const nextMemberIds = [...new Set([...includedIds, memberId])];
+    await updateRecord("cycles", currentCycle.id, { memberIds: nextMemberIds });
+    setCurrentCycle({ ...currentCycle, memberIds: nextMemberIds });
+    setMessage("Member added to this month.");
   }
 
   return (
@@ -1993,7 +2107,33 @@ function Members({ members, setMessage }) {
       <section className="panel">
         <div className="section-heading">
           <h2>Household members</h2>
-          <p>Manage role and access status.</p>
+          <p>Manage role, access status, and who is counted in the current month.</p>
+        </div>
+        <div className="cycle-member-manager">
+          <div>
+            <strong>This month</strong>
+            <span>{includedIds.length} selected member{includedIds.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="cycle-member-pills">
+            {cycleMembers.map((person) => (
+              <span key={person.id}>{person.name}</span>
+            ))}
+          </div>
+          {availableForCycle.length ? (
+            <label>
+              Add member to this month
+              <select defaultValue="" onChange={(event) => {
+                if (!event.target.value) return;
+                addMemberToCycle(event.target.value);
+                event.target.value = "";
+              }}>
+                <option value="">Select member</option>
+                {availableForCycle.map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
         <div className="entry-list">
           {members.map((person) => (
