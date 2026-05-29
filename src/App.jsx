@@ -126,6 +126,12 @@ export function App() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    if (!message) return undefined;
+    const timeoutId = window.setTimeout(() => setMessage(""), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
+
+  useEffect(() => {
     if (!auth) {
       setBootstrapping(false);
       return undefined;
@@ -307,12 +313,12 @@ export function App() {
             <p>{currentCycle?.name || "Current Cycle"}</p>
             <h1>{navigation.find((item) => item.id === activeView)?.label || "Dashboard"}</h1>
           </div>
-          <div className="top-actions">
+          {/* <div className="top-actions">
             <span className="status-pill">
               {getMealRateMode(settings) === "calculated" ? "Calculated month: " : "Static month: "}
               {formatTk(totals.mealRate)}
             </span>
-          </div>
+          </div> */}
         </header>
 
         {message ? <div className="notice">{message}</div> : null}
@@ -815,31 +821,49 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
   const [isEditingDay, setIsEditingDay] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [optimisticDailyMeal, setOptimisticDailyMeal] = useState(null);
+  const [mealFormError, setMealFormError] = useState("");
+  const editableMembers = isAdmin ? activeMembers : activeMembers.filter((person) => person.id === member.id);
+  const editableMemberIds = new Set(editableMembers.map((person) => person.id));
 
   const savedDailyMeal = useMemo(() => dailyMeals.find((entry) => entry.date === date), [dailyMeals, date]);
   const existingDailyMeal = savedDailyMeal || (optimisticDailyMeal?.cycleId === currentCycle.id && optimisticDailyMeal?.date === date ? optimisticDailyMeal : null);
 
+  function sumPortions(portions = {}) {
+    return Object.values(portions).reduce((sum, value) => sum + Number(value || 0), 0);
+  }
+
+  function getSessionBoxCount(session = {}) {
+    const savedCount = Number(session.boxCount || 0);
+    return isAdmin && savedCount <= 0 ? sumPortions(session.portions) : savedCount;
+  }
+
   function blankPortions() {
     const initial = {};
-    activeMembers.forEach((m) => {
+    editableMembers.forEach((m) => {
       initial[m.id] = 0;
     });
     return initial;
   }
 
   function hydratePortions(portions = {}) {
-    return { ...blankPortions(), ...portions };
+    const next = blankPortions();
+    Object.entries(portions).forEach(([memberId, value]) => {
+      if (editableMemberIds.has(memberId)) {
+        next[memberId] = value;
+      }
+    });
+    return next;
   }
 
   useEffect(() => {
     const defaultRate = settings.mealRate || 70;
 
     if (existingDailyMeal) {
-      setLunchOrdered(existingDailyMeal.lunch?.boxCount || 0);
+      setLunchOrdered(getSessionBoxCount(existingDailyMeal.lunch));
       setLunchRate(existingDailyMeal.lunch?.rate || defaultRate);
       setLunchPortions(hydratePortions(existingDailyMeal.lunch?.portions));
       setLunchSkipped(Boolean(existingDailyMeal.lunch?.skipped));
-      setDinnerOrdered(existingDailyMeal.dinner?.boxCount || 0);
+      setDinnerOrdered(getSessionBoxCount(existingDailyMeal.dinner));
       setDinnerRate(existingDailyMeal.dinner?.rate || defaultRate);
       setDinnerPortions(hydratePortions(existingDailyMeal.dinner?.portions));
       setDinnerSkipped(Boolean(existingDailyMeal.dinner?.skipped));
@@ -864,6 +888,30 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     }
   }, [optimisticDailyMeal, savedDailyMeal]);
 
+  useEffect(() => {
+    if (!mealFormError) return undefined;
+    const timeoutId = window.setTimeout(() => setMealFormError(""), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [mealFormError]);
+
+  useEffect(() => {
+    if (!mealFormError) return;
+    setMealFormError("");
+  }, [
+    date,
+    lunchRate,
+    lunchOrdered,
+    lunchPortions,
+    lunchSkipped,
+    dinnerRate,
+    dinnerOrdered,
+    dinnerPortions,
+    dinnerSkipped,
+    editingRates.lunch,
+    editingRates.dinner,
+    mealFormError,
+  ]);
+
   const isCalculated = getMealRateMode(settings) === "calculated";
   const sessionRate = isCalculated ? getCalculatedMealRate({ mealEntries, expenses, settings }) : Number(settings.mealRate || 70);
   const canEditExisting = isAdmin || (existingDailyMeal?.createdBy === member.id && existingDailyMeal?.status === "pending");
@@ -873,31 +921,37 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
   const isDateBeforeCycle = isBeforeDate(date, cycleStartDate);
   const lunchActiveRate = isCalculated ? sessionRate : Number(lunchRate || settings.mealRate || 70);
   const dinnerActiveRate = isCalculated ? sessionRate : Number(dinnerRate || settings.mealRate || 70);
+  const lunchDemandTotal = sumPortions(lunchPortions);
+  const dinnerDemandTotal = sumPortions(dinnerPortions);
   const lunchPreview = splitMeal({
-    boxCount: lunchSkipped ? 0 : Number(lunchOrdered),
+    boxCount: lunchSkipped ? 0 : lunchDemandTotal,
     rate: lunchActiveRate,
     eaters: lunchSkipped ? [] : selectedMemberIds(lunchPortions),
     portions: lunchSkipped ? {} : positivePortions(lunchPortions),
   });
   const dinnerPreview = splitMeal({
-    boxCount: dinnerSkipped ? 0 : Number(dinnerOrdered),
+    boxCount: dinnerSkipped ? 0 : dinnerDemandTotal,
     rate: dinnerActiveRate,
     eaters: dinnerSkipped ? [] : selectedMemberIds(dinnerPortions),
     portions: dinnerSkipped ? {} : positivePortions(dinnerPortions),
   });
-  const lunchTotal = lunchSkipped ? 0 : taka((Number(lunchOrdered) || 0) * lunchActiveRate);
-  const dinnerTotal = dinnerSkipped ? 0 : taka((Number(dinnerOrdered) || 0) * dinnerActiveRate);
+  const lunchTotal = lunchSkipped ? 0 : taka(lunchDemandTotal * lunchActiveRate);
+  const dinnerTotal = dinnerSkipped ? 0 : taka(dinnerDemandTotal * dinnerActiveRate);
   const lunchPeople = lunchSkipped ? 0 : selectedMemberIds(lunchPortions).length;
   const dinnerPeople = dinnerSkipped ? 0 : selectedMemberIds(dinnerPortions).length;
 
   function selectedMemberIds(portions) {
     return Object.entries(portions)
-      .filter(([, val]) => Number(val) > 0)
+      .filter(([memberId, val]) => editableMemberIds.has(memberId) && Number(val) > 0)
       .map(([id]) => id);
   }
 
   function positivePortions(portions) {
-    return Object.fromEntries(Object.entries(portions).filter(([, val]) => Number(val) > 0).map(([id, val]) => [id, Number(val)]));
+    return Object.fromEntries(
+      Object.entries(portions)
+        .filter(([memberId, val]) => editableMemberIds.has(memberId) && Number(val) > 0)
+        .map(([id, val]) => [id, Number(val)]),
+    );
   }
 
   function updatePortion(setter, memberId, value) {
@@ -910,8 +964,23 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
   function setAllPortions(setter, value) {
     const next = {};
-    activeMembers.forEach((person) => {
+    editableMembers.forEach((person) => {
       next[person.id] = value;
+    });
+    setter(next);
+  }
+
+  function setEvenSplit(setter, total) {
+    const count = editableMembers.length;
+    if (!count) {
+      setter({});
+      return;
+    }
+
+    const baseShare = count > 0 ? taka(Number(total || 0) / count) : 0;
+    const next = {};
+    editableMembers.forEach((person, index) => {
+      next[person.id] = index === count - 1 ? taka(Number(total || 0) - baseShare * (count - 1)) : baseShare;
     });
     setter(next);
   }
@@ -928,9 +997,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     }
 
     const eaters = selectedMemberIds(portions);
+    const portionTotal = sumPortions(portions);
     return {
-      boxCount: Number(boxCount) || 0,
-      rate: Number(rate || settings.mealRate || 70),
+      boxCount: isAdmin ? portionTotal : 0,
+      rate: isAdmin ? Number(rate || settings.mealRate || 70) : Number(settings.mealRate || 70),
       eaters,
       portions: positivePortions(portions),
       skipped: false,
@@ -944,11 +1014,11 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     }
 
     const defaultRate = settings.mealRate || 70;
-    setLunchOrdered(existingDailyMeal.lunch?.boxCount || 0);
+    setLunchOrdered(getSessionBoxCount(existingDailyMeal.lunch));
     setLunchRate(existingDailyMeal.lunch?.rate || defaultRate);
     setLunchPortions(hydratePortions(existingDailyMeal.lunch?.portions));
     setLunchSkipped(Boolean(existingDailyMeal.lunch?.skipped));
-    setDinnerOrdered(existingDailyMeal.dinner?.boxCount || 0);
+    setDinnerOrdered(getSessionBoxCount(existingDailyMeal.dinner));
     setDinnerRate(existingDailyMeal.dinner?.rate || defaultRate);
     setDinnerPortions(hydratePortions(existingDailyMeal.dinner?.portions));
     setDinnerSkipped(Boolean(existingDailyMeal.dinner?.skipped));
@@ -964,20 +1034,37 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
   async function submitDailySheet(event) {
     event.preventDefault();
+    setMealFormError("");
 
     if (isDateBeforeCycle) {
-      return setMessage(`Meal date cannot be before this cycle started on ${cycleStartDate}.`);
+      setIsEditingDay(true);
+      setMealFormError(`Meal date cannot be before this cycle started on ${cycleStartDate}.`);
+      return;
     }
 
+    const lunchDemandTotal = sumPortions(lunchPortions);
+    const dinnerDemandTotal = sumPortions(dinnerPortions);
     const lunchEaters = lunchSkipped ? [] : Object.entries(lunchPortions).filter(([, val]) => Number(val) > 0);
     const dinnerEaters = dinnerSkipped ? [] : Object.entries(dinnerPortions).filter(([, val]) => Number(val) > 0);
 
     if (!lunchSkipped && !lunchEaters.length && !dinnerSkipped && !dinnerEaters.length) {
-      return setMessage("Add portions for lunch or dinner, or mark the skipped session as No lunch / No dinner.");
+      setIsEditingDay(true);
+      setMealFormError("Add your own portion for lunch or dinner, or mark the skipped session as No lunch / No dinner.");
+      return;
     }
 
-    if ((!lunchSkipped && lunchEaters.length && Number(lunchOrdered) <= 0) || (!dinnerSkipped && dinnerEaters.length && Number(dinnerOrdered) <= 0)) {
-      return setMessage("Ordered meals must be greater than zero for sessions that are not marked as skipped.");
+    if (isAdmin) {
+      if ((!lunchSkipped && lunchEaters.length && Number(lunchOrdered) <= 0) || (!dinnerSkipped && dinnerEaters.length && Number(dinnerOrdered) <= 0)) {
+        setIsEditingDay(true);
+        setMealFormError("Ordered meals must be greater than zero for sessions that are not marked as skipped.");
+        return;
+      }
+
+      if ((!lunchSkipped && lunchEaters.length && Math.abs(Number(lunchOrdered) - lunchDemandTotal) > 0.01) || (!dinnerSkipped && dinnerEaters.length && Math.abs(Number(dinnerOrdered) - dinnerDemandTotal) > 0.01)) {
+        setIsEditingDay(true);
+        setMealFormError("Ordered meals must match the total member demand before saving.");
+        return;
+      }
     }
 
     const docId = `${currentCycle.id}_${date}`;
@@ -985,8 +1072,8 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       cycleId: currentCycle.id,
       date,
       rateMode: getMealRateMode(settings),
-      lunch: buildSession(lunchOrdered, lunchRate, lunchPortions, lunchSkipped),
-      dinner: buildSession(dinnerOrdered, dinnerRate, dinnerPortions, dinnerSkipped),
+      lunch: buildSession(lunchDemandTotal, lunchRate, lunchPortions, lunchSkipped),
+      dinner: buildSession(dinnerDemandTotal, dinnerRate, dinnerPortions, dinnerSkipped),
       status: isAdmin ? "approved" : "pending",
       createdBy: existingDailyMeal?.createdBy || member.id,
       createdByName: existingDailyMeal?.createdByName || member.name,
@@ -1000,6 +1087,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       setOptimisticDailyMeal({ id: docId, ...payload });
       setIsEditingDay(false);
       setEditingRates({ lunch: false, dinner: false });
+      setMealFormError("");
       setMessage(
         isAdmin
           ? `Daily meal sheet ${existingDailyMeal ? "updated" : "saved"} for ${date}.`
@@ -1070,25 +1158,27 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
             <article>
               <span>Lunch</span>
               <strong>{formatTk(lunchTotal)}</strong>
-              <small>{lunchSkipped ? "No lunch" : `${lunchOrdered || 0} ordered · ${lunchPeople} members`}</small>
+              <small>{lunchSkipped ? "No lunch" : `${taka(lunchDemandTotal)} ordered · ${lunchPeople} members`}</small>
             </article>
             <article>
               <span>Dinner</span>
               <strong>{formatTk(dinnerTotal)}</strong>
-              <small>{dinnerSkipped ? "No dinner" : `${dinnerOrdered || 0} ordered · ${dinnerPeople} members`}</small>
+              <small>{dinnerSkipped ? "No dinner" : `${taka(dinnerDemandTotal)} ordered · ${dinnerPeople} members`}</small>
             </article>
             <article>
               <span>Day total</span>
               <strong>{formatTk(lunchTotal + dinnerTotal)}</strong>
-              <small>{taka((lunchSkipped ? 0 : Number(lunchOrdered || 0)) + (dinnerSkipped ? 0 : Number(dinnerOrdered || 0)))} ordered meals</small>
+              <small>{taka((lunchSkipped ? 0 : lunchDemandTotal) + (dinnerSkipped ? 0 : dinnerDemandTotal))} ordered meals</small>
             </article>
           </div>
 
           <div className="meal-session-grid">
             <MealSessionEditor
-              activeMembers={activeMembers}
+              activeMembers={editableMembers}
               defaultRate={settings.mealRate || 70}
               disabled={!canEditSheet}
+              allowCountEdit={isAdmin}
+              allowRateEdit={isAdmin}
               editingRate={editingRates.lunch}
               label="Lunch"
               ordered={lunchOrdered}
@@ -1104,11 +1194,14 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               updatePortion={updatePortion}
               adjustPortion={adjustPortion}
               setAllPortions={setAllPortions}
+              setEvenSplit={setEvenSplit}
             />
             <MealSessionEditor
-              activeMembers={activeMembers}
+              activeMembers={editableMembers}
               defaultRate={settings.mealRate || 70}
               disabled={!canEditSheet}
+              allowCountEdit={isAdmin}
+              allowRateEdit={isAdmin}
               editingRate={editingRates.dinner}
               label="Dinner"
               ordered={dinnerOrdered}
@@ -1124,9 +1217,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               updatePortion={updatePortion}
               adjustPortion={adjustPortion}
               setAllPortions={setAllPortions}
+              setEvenSplit={setEvenSplit}
             />
           </div>
-
+          {mealFormError ? <div className="meal-form-error">{mealFormError}</div> : null}
           <div className="form-actions">
             {isAdmin && existingDailyMeal?.status === "pending" && !canEditSheet ? (
               <button className="primary" type="button" onClick={approveDailyMeal}>
@@ -1158,6 +1252,8 @@ function MealSessionEditor({
   adjustPortion,
   defaultRate,
   disabled = false,
+  allowCountEdit = true,
+  allowRateEdit = true,
   editingRate,
   label,
   ordered,
@@ -1165,6 +1261,7 @@ function MealSessionEditor({
   preview,
   rate,
   setAllPortions,
+  setEvenSplit,
   setEditingRate,
   setOrdered,
   setPortions,
@@ -1173,9 +1270,11 @@ function MealSessionEditor({
   skipped,
   updatePortion,
 }) {
-  const controlsDisabled = disabled || skipped;
+  const portionControlsDisabled = disabled || skipped;
+  const sessionCount = skipped ? 0 : Number(ordered) || 0;
+  const rateDisabled = disabled || skipped || !allowRateEdit;
   const totalPortions = skipped ? 0 : taka(Object.values(portions).reduce((sum, value) => sum + Number(value || 0), 0));
-  const estimatedTotal = skipped ? 0 : taka((Number(ordered) || 0) * (Number(rate) || 0));
+  const estimatedTotal = skipped ? 0 : taka(sessionCount * (Number(rate) || 0));
   const activeCount = skipped ? 0 : Object.values(portions).filter((value) => Number(value) > 0).length;
 
   return (
@@ -1185,73 +1284,74 @@ function MealSessionEditor({
           <h3>{label}</h3>
           <span>{skipped ? `No ${label.toLowerCase()} selected` : `${formatTk(estimatedTotal)} total · ${activeCount} members eating`}</span>
         </div>
-        <label className="checkbox-line session-skip-toggle">
-          <input disabled={disabled} checked={skipped} type="checkbox" onChange={(event) => setSkipped(event.target.checked)} />
-          No {label.toLowerCase()}
-        </label>
-        <div className="session-controls">
-          <label>
-            Ordered meals
-            <input disabled={controlsDisabled} min="0" step="0.5" type="number" value={ordered} onChange={(event) => setOrdered(event.target.value)} />
-          </label>
-          <label>
-            Rate
-            <div className={editingRate ? "rate-inline-editor editing" : "rate-inline-editor"}>
-              {editingRate ? (
-                <input
-                  autoFocus
-                  min="1"
-                  type="number"
-                  disabled={controlsDisabled}
-                  value={rate}
-                  onChange={(event) => setRate(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
+        {allowCountEdit ? (
+          <>
+            <div className="session-controls">
+              <label>
+                Ordered meals
+                <input disabled={portionControlsDisabled} min="0" step="0.5" type="number" value={ordered} onChange={(event) => setOrdered(event.target.value)} />
+              </label>
+              <label>
+                Rate
+                <div className={editingRate ? "rate-inline-editor editing" : "rate-inline-editor"}>
+                  {editingRate ? (
+                    <input
+                      autoFocus
+                      min="1"
+                      type="number"
+                      disabled={rateDisabled}
+                      value={rate}
+                      onChange={(event) => setRate(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          setEditingRate(false);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span>{formatTk(rate)}</span>
+                  )}
+                  {editingRate ? (
+                    <button
+                      disabled={rateDisabled}
+                      type="button"
+                      title="Confirm rate"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setEditingRate(false);
+                      }}
+                    >
+                      <Check size={13} />
+                    </button>
+                  ) : (
+                    <button disabled={rateDisabled} type="button" title="Edit rate" onClick={() => setEditingRate(true)}>
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  <button
+                    disabled={rateDisabled}
+                    type="button"
+                    title="Reset rate"
+                    onClick={() => {
+                      setRate(defaultRate || 70);
                       setEditingRate(false);
-                    }
-                  }}
-                />
-              ) : (
-                <span>{formatTk(rate)}</span>
-              )}
-              {editingRate ? (
-                <button
-                  disabled={controlsDisabled}
-                  type="button"
-                  title="Confirm rate"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setEditingRate(false);
-                  }}
-                >
-                  <Check size={13} />
-                </button>
-              ) : (
-                <button disabled={controlsDisabled} type="button" title="Edit rate" onClick={() => setEditingRate(true)}>
-                  <Pencil size={13} />
-                </button>
-              )}
-              <button
-                disabled={controlsDisabled}
-                type="button"
-                title="Reset rate"
-                onClick={() => {
-                  setRate(defaultRate || 70);
-                  setEditingRate(false);
-                }}
-              >
-                <RotateCcw size={13} />
-              </button>
+                    }}
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                </div>
+              </label>
             </div>
-          </label>
-        </div>
-        <div className="meal-quick-actions">
-          <button disabled={controlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>
-          <button disabled={controlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0.5)}>All 0.5</button>
-          <button disabled={controlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0)}>Clear</button>
-        </div>
+            <div className="meal-quick-actions">
+              <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>
+              <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0.5)}>All 0.5</button>
+              <button disabled={portionControlsDisabled} type="button" onClick={() => setEvenSplit(setPortions, ordered)}>Split evenly</button>
+              <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0)}>Clear</button>
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="meal-member-list">
@@ -1259,23 +1359,22 @@ function MealSessionEditor({
           <div className="meal-member-row" key={person.id}>
             <span>{person.name}</span>
             <div className="portion-controls">
-              <button disabled={controlsDisabled} type="button" onClick={() => adjustPortion(setPortions, person.id, -0.5)}>-</button>
+              <button disabled={portionControlsDisabled} type="button" onClick={() => adjustPortion(setPortions, person.id, -0.5)}>-</button>
               <input
-                disabled={controlsDisabled}
+                disabled={portionControlsDisabled}
                 min="0"
-                step="0.25"
+                step="any"
                 type="number"
                 value={portions[person.id] ?? 0}
                 onChange={(event) => updatePortion(setPortions, person.id, event.target.value)}
               />
-              <button disabled={controlsDisabled} type="button" onClick={() => adjustPortion(setPortions, person.id, 0.5)}>+</button>
+              <button disabled={portionControlsDisabled} type="button" onClick={() => adjustPortion(setPortions, person.id, 0.5)}>+</button>
             </div>
           </div>
         ))}
       </div>
 
       <div className="meal-session-summary">
-        <span>{totalPortions} member portions</span>
         {Object.entries(preview).map(([memberId, amount]) => (
           <span key={memberId}>
             {activeMembers.find((item) => item.id === memberId)?.name || memberId}: {formatTk(amount)}

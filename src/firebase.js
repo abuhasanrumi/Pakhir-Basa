@@ -1,19 +1,20 @@
 import { initializeApp } from "firebase/app";
 import { GoogleAuthProvider, getAuth, signInWithPopup, signOut } from "firebase/auth";
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  limit,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
+    addDoc,
+    collection,
+    connectFirestoreEmulator,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    getFirestore,
+    limit,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+    where,
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -25,12 +26,20 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+const useFirestoreEmulator = import.meta.env.VITE_USE_FIRESTORE_EMULATOR === "true";
+const firestoreEmulatorHost = import.meta.env.VITE_FIREBASE_FIRESTORE_EMULATOR_HOST || "127.0.0.1";
+const firestoreEmulatorPort = Number(import.meta.env.VITE_FIREBASE_FIRESTORE_EMULATOR_PORT || 8080);
+
 export const hasFirebaseConfig = Object.values(firebaseConfig).every(Boolean);
 export const initialAdminEmail = import.meta.env.VITE_INITIAL_ADMIN_EMAIL?.toLowerCase().trim() || "";
 
 const app = hasFirebaseConfig ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
+
+if (db && useFirestoreEmulator) {
+  connectFirestoreEmulator(db, firestoreEmulatorHost, firestoreEmulatorPort);
+}
 
 export async function signInWithGoogle() {
   if (!auth) throw new Error("Firebase is not configured.");

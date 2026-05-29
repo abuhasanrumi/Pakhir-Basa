@@ -14,6 +14,8 @@ npm install
 npm run dev
 ```
 
+For local development against the Firestore emulator, set `VITE_USE_FIRESTORE_EMULATOR=true` in your local env and run the emulator with `firebase emulators:start --only firestore`. Keep it `false` for production and Vercel deploys so the app uses the live Firebase database.
+
 The first Gmail account that signs in becomes the initial admin. After that, add household members from the Members screen.
 
 ## Deploy

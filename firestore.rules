@@ -21,6 +21,17 @@ service cloud.firestore {
       return isActiveMember() && memberDoc().data.role == "admin";
     }
 
+    function isOwnMealSession(session) {
+      return session.boxCount == 0
+        && session.eaters.size() <= 1
+        && (session.eaters.size() == 0 || session.eaters[0] == request.auth.token.email)
+        && session.portions.keys().hasOnly([request.auth.token.email]);
+    }
+
+    function isOwnMealDraft(data) {
+      return isOwnMealSession(data.lunch) && isOwnMealSession(data.dinner);
+    }
+
     match /members/{memberId} {
       allow get: if isActiveMember()
         || (signedIn() && memberId == request.auth.token.email);
@@ -67,12 +78,22 @@ service cloud.firestore {
     match /dailyMeals/{entryId} {
       allow read: if isActiveMember();
       allow create: if isActiveMember()
-        && request.resource.data.createdBy == request.auth.token.email;
+        && request.resource.data.createdBy == request.auth.token.email
+        && (
+          isAdmin()
+          || isOwnMealDraft(request.resource.data)
+        );
       allow update: if isAdmin()
         || (isActiveMember()
           && resource.data.createdBy == request.auth.token.email
+          && resource.data.lunch.boxCount == 0
+          && resource.data.dinner.boxCount == 0
           && resource.data.status == "pending"
-          && request.resource.data.status == "pending");
+          && request.resource.data.status == "pending"
+          && (
+            isAdmin()
+            || isOwnMealDraft(request.resource.data)
+          ));
       allow delete: if isAdmin()
         || (isActiveMember()
           && resource.data.createdBy == request.auth.token.email
