@@ -255,6 +255,7 @@ export function App() {
       <NoCycleScreen
         isAdmin={isAdmin}
         member={member}
+        cycles={cycles}
         setCurrentCycle={setCurrentCycle}
         setMessage={setMessage}
         user={user}
@@ -419,15 +420,15 @@ function LoginScreen() {
     <div className="login-screen">
       <section className="login-hero">
         <div>
-          <p>Shared house ledger</p>
-          <h1>Pakhir Basa'r Meal Tracker</h1>
-          <span>Track lunch, dinner, bazaar costs, deposits, and cycle closing from one clean workspace.</span>
+          <p>Meal tracking workspace</p>
+          <h1>Pakhir Basa Meal Tracker</h1>
+          <span>Track meals, costs, deposits, and cycle history in one place.</span>
         </div>
       </section>
       <section className="login-panel">
         <Soup size={36} />
-        <h2>Sign in with Gmail</h2>
-        <p>The first signed-in Gmail becomes the admin. After that, only invited active members can enter.</p>
+        <h2>Sign in to continue</h2>
+        <p>Use your Google account to open your meal tracker and continue where you left off.</p>
         <button className="primary" onClick={signInWithGoogle}>
           Continue with Google
         </button>
@@ -449,7 +450,8 @@ function AccessBlocked({ user }) {
   );
 }
 
-function NoCycleScreen({ isAdmin, member, setCurrentCycle, setMessage, user }) {
+function NoCycleScreen({ cycles, isAdmin, member, setCurrentCycle, setMessage, user }) {
+  const [sidebarView, setSidebarView] = useState("create");
   const [form, setForm] = useState({
     name: new Date().toLocaleString("en", { month: "long", year: "numeric" }),
     startDate: today(),
@@ -492,6 +494,19 @@ function NoCycleScreen({ isAdmin, member, setCurrentCycle, setMessage, user }) {
             <span>Meal & Mess Tracker</span>
           </div>
         </div>
+        {isAdmin ? (
+          <nav className="nav no-cycle-nav">
+            <button className={sidebarView === "create" ? "nav-item active" : "nav-item"} onClick={() => setSidebarView("create")}>
+              <Plus size={18} />
+              <span>Create month</span>
+            </button>
+            <button className={sidebarView === "history" ? "nav-item active" : "nav-item"} onClick={() => setSidebarView("history")}>
+              <Banknote size={18} />
+              <span>Cycle history</span>
+              {cycles.filter((cycle) => cycle.status === "closed").length ? <b>{cycles.filter((cycle) => cycle.status === "closed").length}</b> : null}
+            </button>
+          </nav>
+        ) : null}
         <div className="profile">
           <img src={user.photoURL} alt="" />
           <div>
@@ -504,38 +519,42 @@ function NoCycleScreen({ isAdmin, member, setCurrentCycle, setMessage, user }) {
         </div>
       </aside>
       <main className="main no-cycle-main">
-        <section className="panel no-cycle-panel">
-          <div className="section-heading">
-            <h2>No active month</h2>
-            <p>{isAdmin ? "Create a month and choose how meal cost will be calculated." : "An admin needs to create the current month before entries can be added."}</p>
-          </div>
-          {isAdmin ? (
-            <form className="form-grid" onSubmit={startCycle}>
-              <label>
-                Month name
-                <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-              </label>
-              <label>
-                Start date
-                <input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} />
-              </label>
-              <label>
-                Meal rate mode
-                <select value={form.rateMode} onChange={(event) => setForm({ ...form, rateMode: event.target.value })}>
-                  <option value="static">Static meal rate</option>
-                  <option value="calculated">Calculated from expense and deposits</option>
-                </select>
-              </label>
-              <label>
-                Default meal rate
-                <input min="1" type="number" value={form.mealRate} onChange={(event) => setForm({ ...form, mealRate: event.target.value })} />
-              </label>
-              <button className="primary" type="submit">
-                <Plus size={18} /> Create month
-              </button>
-            </form>
-          ) : null}
-        </section>
+        {isAdmin && sidebarView === "history" ? (
+          <History cycles={cycles} />
+        ) : (
+          <section className="panel no-cycle-panel">
+            <div className="section-heading">
+              <h2>No active month</h2>
+              <p>{isAdmin ? "Create a month and choose how meal cost will be calculated." : "An admin needs to create the current month before entries can be added."}</p>
+            </div>
+            {isAdmin ? (
+              <form className="form-grid" onSubmit={startCycle}>
+                <label>
+                  Month name
+                  <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                </label>
+                <label>
+                  Start date
+                  <input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} />
+                </label>
+                <label>
+                  Meal rate mode
+                  <select value={form.rateMode} onChange={(event) => setForm({ ...form, rateMode: event.target.value })}>
+                    <option value="static">Static meal rate</option>
+                    <option value="calculated">Calculated from expense and deposits</option>
+                  </select>
+                </label>
+                <label>
+                  Default meal rate
+                  <input min="1" type="number" value={form.mealRate} onChange={(event) => setForm({ ...form, mealRate: event.target.value })} />
+                </label>
+                <button className="primary" type="submit">
+                  <Plus size={18} /> Create month
+                </button>
+              </form>
+            ) : null}
+          </section>
+        )}
       </main>
     </div>
   );
@@ -688,14 +707,36 @@ function Metric({ detail, icon: Icon, label, value }) {
 
 function MemberSummaryTable({ isCalculatedMonth, ledger, mealStats, members }) {
   const rows = members.filter((member) => member.active).map((member) => ledger[member.id]).filter(Boolean);
+  const summary = rows.reduce(
+    (acc, row) => {
+      acc.totalDeposits += Number(row.deposits || 0);
+      acc.totalMealShare += Number(row.mealCost || 0);
+      acc.totalExpenseShare += Number(row.expenseCost || 0);
+      acc.netBalance += Number(row.balance || 0);
+      if (row.balance >= 0) acc.inCredit += 1;
+      else acc.inDebt += 1;
+      return acc;
+    },
+    { totalDeposits: 0, totalMealShare: 0, totalExpenseShare: 0, netBalance: 0, inCredit: 0, inDebt: 0 },
+  );
+
+  const totalMeals = rows.reduce((acc, row) => acc + Number(mealStats[row.memberId]?.meals || 0), 0);
   return (
-    <section className="panel">
-      <div className="section-heading">
-        <h2>Per-member summary</h2>
-        <p>Everyone can see meals, costs, deposits, and current balance.</p>
+    <section className="panel member-summary">
+      <div className="section-heading member-summary__heading">
+        <div>
+          <span className="eyebrow">Household ledger</span>
+          <h2>Per-member summary</h2>
+          <p>Everyone can see meals, costs, deposits, and current balance.</p>
+        </div>
+        <div className="summary-note">
+          <span>{rows.length} active members</span>
+          <span>{totalMeals.toFixed(1)} total meals</span>
+        </div>
       </div>
+
       <div className="table-wrap">
-        <table>
+        <table className="summary-table">
           <thead>
             <tr>
               <th>Member</th>
@@ -709,8 +750,13 @@ function MemberSummaryTable({ isCalculatedMonth, ledger, mealStats, members }) {
           <tbody>
             {rows.map((row) => (
               <tr key={row.memberId}>
-                <td>{row.name}</td>
-                <td>{mealStats[row.memberId]?.meals || 0}</td>
+                <td>
+                  <div className="member-cell">
+                    <strong>{row.name}</strong>
+                    <span>{row.balance >= 0 ? "In credit" : "Needs settlement"}</span>
+                  </div>
+                </td>
+                <td>{Number(mealStats[row.memberId]?.meals || 0).toFixed(1)}</td>
                 <td>{formatTk(row.deposits || 0)}</td>
                 <td>{formatTk(row.mealCost)}</td>
                 {isCalculatedMonth ? <td>{formatTk(row.expenseCost)}</td> : null}
@@ -772,25 +818,47 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
       {detailDate ? (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDetailDate(null)}>
           <div className="modal-card meal-details-modal" role="dialog" aria-modal="true" aria-labelledby="meal-details-title" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="modal-heading">
+            <div className="modal-heading meal-details-modal__heading">
+              <span className="eyebrow">Daily meal split</span>
               <h2 id="meal-details-title">Meals on {detailDate}</h2>
               <p>{detailEntries.length ? "Approved lunch and dinner split for this date." : "No approved meals were found for this date."}</p>
+            </div>
+            <div className="meal-details-summary">
+              <article className="meal-details-summary__item">
+                <span>Total boxes ordered</span>
+                <strong>{detailEntries.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0)}</strong>
+              </article>
+              <article className="meal-details-summary__item">
+                <span>Active rate</span>
+                <strong>{formatTk(activeRate)}</strong>
+              </article>
             </div>
             <div className="daily-details">
               {detailEntries.map((entry) => {
                 const rate = getMealRateMode(settings) === "calculated" ? activeRate : getMealEntryRate(entry, settings);
                 const shares = splitMeal(entry, rate);
+                const totalShare = Object.values(shares).reduce((sum, amount) => sum + Number(amount || 0), 0);
                 return (
                   <article className="daily-meal-card" key={entry.id}>
-                    <strong>
-                      {entry.session} · {entry.boxCount} ordered · {formatTk(rate)} rate
-                    </strong>
-                    <div>
+                    <div className="daily-meal-card__top">
+                      <div className="daily-meal-card__session">
+                        <span>{entry.session}</span>
+                        <strong>{entry.boxCount} ordered</strong>
+                      </div>
+                      <div className="daily-meal-card__rate">
+                        <span>{formatTk(rate)} rate</span>
+                      </div>
+                    </div>
+                    <div className="daily-meal-card__chips">
                       {Object.entries(shares).map(([memberId, amount]) => (
-                        <span key={memberId}>
+                        <span key={memberId} className="meal-share-chip">
                           {activeMembers.find((person) => person.id === memberId)?.name || memberId}: {formatTk(amount)}
                         </span>
                       ))}
+                    </div>
+                    <div className="daily-meal-card__footer">
+                      <small>{Object.keys(shares).length} member{Object.keys(shares).length === 1 ? "" : "s"} split this meal</small>
+                      <strong>{formatTk(totalShare)}</strong>
                     </div>
                   </article>
                 );
@@ -1710,15 +1778,28 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop modal-backdrop--soft" role="presentation">
       <div className="modal-card confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-        <div className="modal-heading">
-          <h2 id="confirm-title">{title}</h2>
-          <p>{message}</p>
+        <div className="confirm-modal__header">
+          <div className="confirm-modal__icon" aria-hidden="true">
+            <Trash2 size={22} />
+          </div>
+          <div className="modal-heading confirm-modal__heading">
+            <span className="eyebrow">Confirmation required</span>
+            <h2 id="confirm-title">{title}</h2>
+            <p>{message}</p>
+          </div>
+          <div className="confirm-modal__pill">
+            <Shield size={14} />
+            <span>{confirmLabel}</span>
+          </div>
         </div>
-        <div className="modal-actions">
-          <button className="secondary" type="button" onClick={onCancel}>Cancel</button>
-          <button className="danger" type="button" onClick={onConfirm}>{confirmLabel}</button>
+        <div className="confirm-modal__footer">
+          <p>This keeps the action explicit before anything changes.</p>
+          <div className="modal-actions confirm-modal__actions">
+            <button className="secondary" type="button" onClick={onCancel}>Cancel</button>
+            <button className="danger" type="button" onClick={onConfirm}>{confirmLabel}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1941,24 +2022,57 @@ function MemberNameEditor({ person, setMessage }) {
 function History({ cycles }) {
   const closed = cycles.filter((cycle) => cycle.status === "closed");
   return (
-    <section className="panel">
+    <section className="panel history-panel">
       <div className="section-heading">
+        <span className="eyebrow">Archive</span>
         <h2>Closed cycles</h2>
-        <p>Each closed cycle keeps a balance snapshot.</p>
+        <p>Each closed cycle keeps a balance snapshot with per-member meals, deposits, costs, and balance.</p>
       </div>
       <div className="history-grid">
         {closed.map((cycle) => (
           <article className="history-item" key={cycle.id}>
-            <strong>
-              {cycle.startDate} to {cycle.endDate}
-            </strong>
-            <span>Meals {formatTk(cycle.snapshot?.totals?.meals || 0)}</span>
-            <span>Expenses {formatTk(cycle.snapshot?.totals?.expenses || 0)}</span>
-            <div className="mini-ledger">
+            <div className="history-item__header">
+              <div>
+                <strong>{cycle.name || `${cycle.startDate} to ${cycle.endDate || "closing"}`}</strong>
+                <span>{cycle.startDate} to {cycle.endDate || "closed"}</span>
+              </div>
+              <span className="history-status">Closed</span>
+            </div>
+
+            <div className="history-kpis">
+              <article>
+                <span>Total meals</span>
+                <strong>{formatTk(cycle.snapshot?.totals?.meals || 0)}</strong>
+              </article>
+              <article>
+                <span>Total deposits</span>
+                <strong>{formatTk(cycle.snapshot?.totals?.deposits || 0)}</strong>
+              </article>
+              <article>
+                <span>Total expenses</span>
+                <strong>{formatTk(cycle.snapshot?.totals?.expenses || 0)}</strong>
+              </article>
+              <article>
+                <span>Meal rate</span>
+                <strong>{formatTk(cycle.snapshot?.totals?.calculatedMealRate || cycle.snapshot?.totals?.defaultMealRate || 0)}</strong>
+              </article>
+            </div>
+
+            <div className="history-members">
               {Object.values(cycle.snapshot?.ledger || {}).map((row) => (
-                <small key={row.memberId}>
-                  {row.name}: {formatTk(row.balance)}
-                </small>
+                <div className="history-member-row" key={row.memberId}>
+                  <div className="history-member-row__name">
+                    <strong>{row.name}</strong>
+                    <span>{row.balance >= 0 ? "In credit" : "Needs settlement"}</span>
+                  </div>
+                  <div className="history-member-row__metrics">
+                    <span><em>Meals</em>{Number(row.mealCount || 0).toFixed(1)}</span>
+                    <span><em>Deposits</em>{formatTk(row.deposits || 0)}</span>
+                    <span><em>Meal cost</em>{formatTk(row.mealCost || 0)}</span>
+                    <span><em>Expense share</em>{formatTk(row.expenseCost || 0)}</span>
+                    <span><em>Balance</em>{formatTk(row.balance || 0)}</span>
+                  </div>
+                </div>
               ))}
             </div>
           </article>

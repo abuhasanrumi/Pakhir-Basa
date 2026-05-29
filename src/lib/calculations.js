@@ -75,6 +75,7 @@ export function calculateLedger({
       memberId: member.id,
       name: member.name,
       deposits: 0,     /* Total advance deposits/contributions handed in */
+      mealCount: 0,    /* Total meal boxes assigned to this member */
       owed: 0,         /* Total owed (Meals + Expense Share) */
       mealCost: 0,     /* Subtotal meal costs incurred */
       expenseCost: 0,  /* Subtotal utility/other shared expense costs */
@@ -89,6 +90,7 @@ export function calculateLedger({
         memberId,
         name: memberId,
         deposits: 0,
+        mealCount: 0,
         owed: 0,
         mealCost: 0,
         expenseCost: 0,
@@ -114,8 +116,15 @@ export function calculateLedger({
     .forEach((entry) => {
       const rateToUse = getMealRateMode(settings) === "calculated" ? calculatedRate : getMealEntryRate(entry, settings);
       const shares = splitMeal(entry, rateToUse);
+      const eaters = entry.eaters || [];
+      const portions = entry.portions || {};
+      const hasPortions = eaters.some((memberId) => Number(portions[memberId]) > 0);
+      const weights = Object.fromEntries(eaters.map((memberId) => [memberId, hasPortions ? Number(portions[memberId]) || 0 : 1]));
+      const totalWeight = Object.values(weights).reduce((sum, value) => sum + value, 0);
       Object.entries(shares).forEach(([memberId, amount]) => {
         const row = ensure(memberId);
+        const mealCount = totalWeight > 0 ? (Number(entry.boxCount || 0) * (weights[memberId] || 0)) / totalWeight : 0;
+        row.mealCount = taka(row.mealCount + mealCount);
         row.mealCost = taka(row.mealCost + amount);
         row.owed = taka(row.owed + amount);
       });
