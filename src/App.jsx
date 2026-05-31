@@ -1261,10 +1261,7 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
           cell.blank ? (
             <span className="calendar-day blank" key={cell.key} />
           ) : (
-            <button className={cell.date === selectedDate ? "calendar-day selected" : "calendar-day"} key={cell.date} onClick={() => openDateDetails(cell.date)}>
-              <span>{cell.day}</span>
-              {cell.entries.length ? <small>{cell.entries.length} meals</small> : null}
-            </button>
+            <CalendarDayButton cell={cell} isSelected={cell.date === selectedDate} onClick={() => openDateDetails(cell.date)} />
           ),
         )}
       </div>
@@ -1325,6 +1322,16 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
         </div>
       ) : null}
     </section>
+  );
+}
+
+function CalendarDayButton({ cell, isSelected, onClick }) {
+  const orderedMeals = taka(cell.entries.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0));
+  return (
+    <button className={isSelected ? "calendar-day selected" : "calendar-day"} onClick={onClick}>
+      <span>{cell.day}</span>
+      {orderedMeals ? <small>{orderedMeals} meal{orderedMeals === 1 ? "" : "s"}</small> : null}
+    </button>
   );
 }
 
