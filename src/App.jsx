@@ -473,8 +473,6 @@ function Shell({ message }) {
         </div>
         <div className="loading-copy">
           <span className="eyebrow">Preparing workspace</span>
-          <h1>Loading household data</h1>
-          <p>{message || "Checking your account, members, and current month."}</p>
         </div>
         <div className="loading-progress" aria-hidden="true">
           <span />
