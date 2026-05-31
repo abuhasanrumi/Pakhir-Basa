@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#12281e" />
+    <title>Pakhir Basa · Offline</title>
+    <style>
+      :root {
+        color: #12281e;
+        background: #fbfbfa;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        align-items: center;
+        display: flex;
+        min-height: 100vh;
+        margin: 0;
+        padding: 24px;
+      }
+
+      main {
+        background: #ffffff;
+        border: 1px solid rgba(18, 40, 30, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 24px 70px rgba(18, 40, 30, 0.08);
+        max-width: 520px;
+        padding: 28px;
+      }
+
+      .mark {
+        align-items: center;
+        background: #12281e;
+        border-radius: 16px;
+        color: #ffffff;
+        display: inline-flex;
+        font-weight: 800;
+        height: 52px;
+        justify-content: center;
+        margin-bottom: 18px;
+        width: 52px;
+      }
+
+      h1 {
+        font-size: 1.6rem;
+        margin: 0 0 8px;
+      }
+
+      p {
+        color: #5d6d65;
+        line-height: 1.5;
+        margin: 0 0 18px;
+      }
+
+      button {
+        background: #12281e;
+        border: 0;
+        border-radius: 14px;
+        color: #ffffff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+        min-height: 44px;
+        padding: 10px 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">PB</div>
+      <h1>You’re offline</h1>
+      <p>You’re offline. Showing last saved data. Editing will be available when you reconnect.</p>
+      <button type="button" onclick="window.location.reload()">Retry</button>
+    </main>
+  </body>
+</html>

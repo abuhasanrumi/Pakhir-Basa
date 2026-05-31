@@ -2,6 +2,8 @@
   "name": "Pakhir Basa Meal Tracker",
   "short_name": "Pakhir Basa",
   "description": "Meal and mess tracker for a shared household.",
+  "id": "/",
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,6 +11,12 @@
   "theme_color": "#12281e",
   "orientation": "portrait-primary",
   "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icon.svg",
       "sizes": "any",

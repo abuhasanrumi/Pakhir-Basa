@@ -419,6 +419,42 @@ p {
   animation: slideIn 0.3s ease;
 }
 
+.offline-banner {
+  align-items: center;
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+  border: 1px solid #fed7aa;
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--panel-shadow);
+  color: #7c2d12;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px 18px;
+}
+
+.offline-banner.syncing {
+  background: linear-gradient(135deg, rgba(18, 40, 30, 0.05), #ffffff);
+  border-color: rgba(18, 40, 30, 0.12);
+  color: var(--primary);
+}
+
+.offline-banner strong {
+  display: block;
+  font-size: 0.98rem;
+  margin-bottom: 3px;
+}
+
+.offline-banner p {
+  color: inherit;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.offline-banner button {
+  flex: 0 0 auto;
+}
+
 @keyframes slideIn {
   from { transform: translateY(-10px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -2994,6 +3030,16 @@ td strong {
     flex-direction: column;
     align-items: stretch;
     padding: 16px;
+  }
+
+  .offline-banner {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 14px;
+  }
+
+  .offline-banner button {
+    width: 100%;
   }
 
   .toolbar-band button:last-child {

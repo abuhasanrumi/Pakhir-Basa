@@ -37,6 +37,8 @@ import {
 import { buildCycleSnapshot, calculateLedger, getCalculatedMealRate, getMealEntryRate, getMealRateMode, splitMeal, taka } from "./lib/calculations";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const OFFLINE_NOTICE = "You’re offline. Showing last saved data. Editing will be available when you reconnect.";
+const CACHE_PREFIX = "pakhir-basa";
 
 const emptyExpense = {
   date: today(),
@@ -55,6 +57,64 @@ function formatTk(amount) {
 
 function isBeforeDate(date, minDate) {
   return Boolean(date && minDate && date < minDate);
+}
+
+function cacheKey(name) {
+  return `${CACHE_PREFIX}:${name}`;
+}
+
+function readLocalCache(name, fallback = null) {
+  try {
+    const item = window.localStorage.getItem(cacheKey(name));
+    if (!item) return fallback;
+    const parsed = JSON.parse(item);
+    return parsed?.value ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalCache(name, value) {
+  try {
+    window.localStorage.setItem(cacheKey(name), JSON.stringify({ cachedAt: new Date().toISOString(), value }));
+  } catch {
+    // Local cache is a convenience only; the server remains the source of truth.
+  }
+}
+
+function collectionCacheName(collectionName, options = {}) {
+  return [
+    "collection",
+    collectionName,
+    options.cycleId || "all",
+    options.orderBy || "none",
+    options.orderDirection || "asc",
+  ].join(":");
+}
+
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const [retryToken, setRetryToken] = useState(0);
+
+  useEffect(() => {
+    function updateOnlineStatus() {
+      setIsOnline(navigator.onLine);
+    }
+
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+    return () => {
+      window.removeEventListener("online", updateOnlineStatus);
+      window.removeEventListener("offline", updateOnlineStatus);
+    };
+  }, []);
+
+  function retryConnection() {
+    setIsOnline(navigator.onLine);
+    setRetryToken((current) => current + 1);
+  }
+
+  return { isOnline, retryConnection, retryToken };
 }
 
 function flattenDailyMeals(dailyMeals = []) {
@@ -83,10 +143,16 @@ function flattenDailyMeals(dailyMeals = []) {
 }
 
 function useCollection(collectionName, options = {}) {
-  const [rows, setRows] = useState([]);
+  const cacheName = collectionCacheName(collectionName, options);
+  const [rows, setRows] = useState(() => readLocalCache(cacheName, []));
   const [loading, setLoading] = useState(true);
+  const [serverSynced, setServerSynced] = useState(false);
 
   useEffect(() => {
+    const cachedRows = readLocalCache(cacheName, []);
+    setRows(cachedRows);
+    setServerSynced(false);
+
     if (!db || options.skip) {
       setRows([]);
       setLoading(false);
@@ -100,6 +166,7 @@ function useCollection(collectionName, options = {}) {
 
     return onSnapshot(
       q,
+      { includeMetadataChanges: true },
       (snap) => {
         const nextRows = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
         if (options.orderBy && options.cycleId) {
@@ -110,13 +177,20 @@ function useCollection(collectionName, options = {}) {
           });
         }
         setRows(nextRows);
+        if (!snap.metadata.fromCache) {
+          writeLocalCache(cacheName, nextRows);
+          setServerSynced(true);
+        }
         setLoading(false);
       },
-      () => setLoading(false),
+      () => {
+        setRows(cachedRows);
+        setLoading(false);
+      },
     );
-  }, [collectionName, options.cycleId, options.orderBy, options.orderDirection, options.skip]);
+  }, [cacheName, collectionName, options.cycleId, options.orderBy, options.orderDirection, options.retryToken, options.skip]);
 
-  return { rows, loading };
+  return { rows, loading, serverSynced };
 }
 
 export function App() {
@@ -128,6 +202,7 @@ export function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [message, setMessage] = useState("");
+  const { isOnline, retryConnection, retryToken } = useOnlineStatus();
 
   useEffect(() => {
     if (!message) return undefined;
@@ -155,14 +230,22 @@ export function App() {
         }
 
         const email = nextUser.email.toLowerCase();
+        const cachedSession = readLocalCache(`session:${email}`, null);
         let appMember = await getMemberByEmail(email);
         if (!appMember && initialAdminEmail && email === initialAdminEmail) {
           appMember = await bootstrapAdmin(nextUser);
         }
 
         if (appMember?.active) {
+          const openCycle = await getOpenCycle();
           setMember(appMember);
-          setCurrentCycle(await getOpenCycle());
+          setCurrentCycle(openCycle);
+          setSelectedHistoryCycleId("");
+          setMobileSidebarOpen(false);
+          writeLocalCache(`session:${email}`, { currentCycle: openCycle, member: appMember });
+        } else if (!navigator.onLine && cachedSession?.member?.active) {
+          setMember(cachedSession.member);
+          setCurrentCycle(cachedSession.currentCycle || null);
           setSelectedHistoryCycleId("");
           setMobileSidebarOpen(false);
         }
@@ -170,25 +253,35 @@ export function App() {
         setBootstrapping(false);
       } catch (error) {
         console.error("Firebase setup failed", error);
-        setMessage(error.code === "permission-denied" ? "Firestore permission denied. Deploy the latest firestore.rules, then sign in again." : error.message);
+        const email = nextUser?.email?.toLowerCase();
+        const cachedSession = email ? readLocalCache(`session:${email}`, null) : null;
+        if (!navigator.onLine && cachedSession?.member?.active) {
+          setMember(cachedSession.member);
+          setCurrentCycle(cachedSession.currentCycle || null);
+          setSelectedHistoryCycleId("");
+          setMobileSidebarOpen(false);
+          setMessage("");
+        } else {
+          setMessage(error.code === "permission-denied" ? "Firestore permission denied. Deploy the latest firestore.rules, then sign in again." : error.message);
+        }
         setBootstrapping(false);
       }
     });
   }, []);
 
   const isAdmin = member?.role === "admin";
-  const { rows: members } = useCollection("members", { orderBy: "name", skip: !member });
-  const { rows: cycles } = useCollection("cycles", { orderBy: "startDate", orderDirection: "desc", skip: !member });
+  const { rows: members, serverSynced: membersSynced } = useCollection("members", { orderBy: "name", retryToken, skip: !member });
+  const { rows: cycles, serverSynced: cyclesSynced } = useCollection("cycles", { orderBy: "startDate", orderDirection: "desc", retryToken, skip: !member });
   useEffect(() => {
     const openCycle = cycles.find((cycle) => cycle.status === "open");
     setCurrentCycle(openCycle || null);
   }, [cycles]);
 
-  const { rows: dailyMeals } = useCollection("dailyMeals", { cycleId: currentCycle?.id, orderBy: "date", skip: !currentCycle });
+  const { rows: dailyMeals, serverSynced: dailyMealsSynced } = useCollection("dailyMeals", { cycleId: currentCycle?.id, orderBy: "date", retryToken, skip: !currentCycle });
   const mealEntries = useMemo(() => flattenDailyMeals(dailyMeals), [dailyMeals]);
-  const { rows: expenses } = useCollection("expenses", { cycleId: currentCycle?.id, orderBy: "date", skip: !currentCycle });
-  const { rows: deposits } = useCollection("deposits", { cycleId: currentCycle?.id, orderBy: "date", skip: !currentCycle });
-  const { rows: settingsRows } = useCollection("settings", { skip: !member });
+  const { rows: expenses, serverSynced: expensesSynced } = useCollection("expenses", { cycleId: currentCycle?.id, orderBy: "date", retryToken, skip: !currentCycle });
+  const { rows: deposits, serverSynced: depositsSynced } = useCollection("deposits", { cycleId: currentCycle?.id, orderBy: "date", retryToken, skip: !currentCycle });
+  const { rows: settingsRows, serverSynced: settingsSynced } = useCollection("settings", { retryToken, skip: !member });
   const settingsDoc = settingsRows[0] || {};
   const settings = {
     id: settingsDoc.id,
@@ -199,6 +292,52 @@ export function App() {
   const cycleMemberIds = currentCycle?.memberIds || [];
   const activeMembers = householdActiveMembers.filter((item) => cycleMemberIds.includes(item.id));
   const isCalculatedMonth = getMealRateMode(settings) === "calculated";
+  const baseServerSynced = membersSynced && cyclesSynced && settingsSynced;
+  const cycleServerSynced = !currentCycle || (dailyMealsSynced && depositsSynced && (!isCalculatedMonth || expensesSynced));
+  const serverDataReady = isOnline && baseServerSynced && cycleServerSynced;
+  const readOnlyMode = Boolean(member) && (!isOnline || !serverDataReady);
+
+  useEffect(() => {
+    if (!member?.email || !serverDataReady) return;
+    writeLocalCache(`session:${member.email.toLowerCase()}`, { currentCycle, member });
+  }, [currentCycle, member, serverDataReady]);
+
+  useEffect(() => {
+    if (!readOnlyMode) return undefined;
+
+    const selector = [
+      ".main input",
+      ".main select",
+      ".main textarea",
+      ".main form button",
+      ".main .primary",
+      ".main .danger",
+      ".main .approve",
+      ".main .danger-icon",
+      ".main .approve-text-button",
+      ".main .delete-member-button",
+      ".main .close-cycle-button",
+    ].join(",");
+    const controls = Array.from(document.querySelectorAll(selector)).filter((control) => !control.closest("[data-offline-allowed='true']") && !control.matches("[data-offline-allowed='true']") && !control.classList.contains("calendar-day"));
+    const previousStates = controls.map((control) => [control, control.disabled]);
+    controls.forEach((control) => {
+      control.disabled = true;
+    });
+
+    function blockSubmit(event) {
+      if (event.target.closest("[data-offline-allowed='true']")) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    document.addEventListener("submit", blockSubmit, true);
+    return () => {
+      previousStates.forEach(([control, wasDisabled]) => {
+        control.disabled = wasDisabled;
+      });
+      document.removeEventListener("submit", blockSubmit, true);
+    };
+  }, [activeView, readOnlyMode, selectedHistoryCycleId, currentCycle?.id, dailyMeals.length, expenses.length, deposits.length, members.length]);
 
   useEffect(() => {
     if (!isCalculatedMonth && activeView === "expenses") {
@@ -272,6 +411,10 @@ export function App() {
         setMessage={setMessage}
         sidebarOpen={mobileSidebarOpen}
         user={user}
+        isOnline={isOnline}
+        onRetryConnection={retryConnection}
+        readOnlyMode={readOnlyMode}
+        serverDataReady={serverDataReady}
       />
     );
   }
@@ -359,6 +502,7 @@ export function App() {
           </div> */}
         </header>
 
+        {readOnlyMode ? <OfflineBanner isOnline={isOnline} onRetry={retryConnection} serverDataReady={serverDataReady} /> : null}
         {message ? <div className="notice">{message}</div> : null}
 
         {activeView === "dashboard" ? (
@@ -435,6 +579,24 @@ function SetupError({ message }) {
   );
 }
 
+function OfflineBanner({ isOnline, onRetry, serverDataReady }) {
+  return (
+    <div className={isOnline ? "offline-banner syncing" : "offline-banner"} role="status">
+      <div>
+        <strong>{isOnline && !serverDataReady ? "Syncing latest data" : "Offline read-only mode"}</strong>
+        <p>
+          {isOnline && !serverDataReady
+            ? "Fetching the latest server data before editing is enabled."
+            : OFFLINE_NOTICE}
+        </p>
+      </div>
+      <button className="secondary" data-offline-allowed="true" type="button" onClick={onRetry}>
+        <RotateCcw size={16} /> Retry
+      </button>
+    </div>
+  );
+}
+
 function LoginScreen() {
   return (
     <div className="login-screen">
@@ -482,7 +644,7 @@ function Shell({ message }) {
   );
 }
 
-function NoCycleScreen({ cycles, isAdmin, member, members, selectedHistoryCycleId, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
+function NoCycleScreen({ cycles, isAdmin, isOnline, member, members, onRetryConnection, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
   const selectableMembers = members
     .filter((item) => item.active)
     .sort((left, right) => {
@@ -592,6 +754,7 @@ function NoCycleScreen({ cycles, isAdmin, member, members, selectedHistoryCycleI
         </div>
       </aside>
       <main className="main no-cycle-main">
+        {readOnlyMode ? <OfflineBanner isOnline={isOnline} onRetry={onRetryConnection} serverDataReady={serverDataReady} /> : null}
         {isAdmin && sidebarView === "history" ? (
           <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} />
         ) : (
