@@ -6,127 +6,116 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email != null;
     }
 
-    function memberDoc() {
-      return get(/databases/$(database)/documents/members/$(request.auth.token.email));
+    function memberId(messId) {
+      return messId + "_" + request.auth.token.email;
     }
 
-    function isActiveMember() {
+    function memberDoc(messId) {
+      return get(/databases/$(database)/documents/members/$(memberId(messId)));
+    }
+
+    function hasMember(messId) {
       return signedIn()
-        && exists(/databases/$(database)/documents/members/$(request.auth.token.email))
-        && memberDoc().data.active == true
-        && memberDoc().data.email == request.auth.token.email;
+        && exists(/databases/$(database)/documents/members/$(memberId(messId)));
     }
 
-    function isAdmin() {
-      return isActiveMember() && memberDoc().data.role == "admin";
+    function isActiveMember(messId) {
+      return hasMember(messId)
+        && memberDoc(messId).data.active == true
+        && memberDoc(messId).data.email == request.auth.token.email;
     }
 
-    function isOwnMealSession(session) {
-      return session.boxCount == 0
-        && session.eaters.size() <= 1
-        && (session.eaters.size() == 0 || session.eaters[0] == request.auth.token.email)
-        && session.portions.keys().hasOnly([request.auth.token.email]);
+    function isAdmin(messId) {
+      return isActiveMember(messId) && memberDoc(messId).data.role == "admin";
     }
 
-    function isOwnMealDraft(data) {
-      return isOwnMealSession(data.lunch) && isOwnMealSession(data.dinner);
+    function isOwnDailyMealDraft(data) {
+      return data.createdBy == memberId(data.messId)
+        && data.lunch.boxCount == 0
+        && data.dinner.boxCount == 0;
+    }
+
+    match /messes/{messId} {
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.token.email;
+      allow read: if isActiveMember(messId)
+        || (signedIn() && resource.data.createdBy == request.auth.token.email);
+      allow update, delete: if isAdmin(messId);
+    }
+
+    match /invites/{inviteId} {
+      allow read: if signedIn()
+        && (resource.data.used == false || isAdmin(resource.data.messId));
+      allow create: if isAdmin(request.resource.data.messId)
+        && request.resource.data.used == false
+        && request.resource.data.role in ["member", "admin"];
+      allow update: if isAdmin(resource.data.messId)
+        || (signedIn()
+          && resource.data.used == false
+          && request.resource.data.used == true
+          && request.resource.data.usedBy == request.auth.token.email
+          && request.resource.data.messId == resource.data.messId);
+      allow delete: if isAdmin(resource.data.messId);
     }
 
     match /members/{memberId} {
-      allow get: if isActiveMember()
-        || (signedIn() && memberId == request.auth.token.email);
-      allow list: if isActiveMember();
+      allow read: if signedIn()
+        && (resource.data.email == request.auth.token.email || isActiveMember(resource.data.messId));
       allow create: if signedIn()
-        && (
-          (
-            memberId == request.auth.token.email
-            && request.resource.data.email == request.auth.token.email
-            && request.resource.data.role == "admin"
-            && request.resource.data.active == true
-          )
-          || isAdmin()
-        );
-      allow update, delete: if isAdmin();
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.active == true
+        && request.resource.data.role in ["member", "admin"];
+      allow update, delete: if isAdmin(resource.data.messId);
     }
 
     match /settings/{settingId} {
-      allow read: if isActiveMember();
-      allow write: if isAdmin();
+      allow read: if isActiveMember(resource.data.messId);
+      allow create, update, delete: if isAdmin(request.resource.data.messId);
     }
 
     match /cycles/{cycleId} {
-      allow read: if isActiveMember();
-      allow create: if isAdmin();
-      allow update, delete: if isAdmin();
-    }
-
-    match /mealEntries/{entryId} {
-      allow read: if isActiveMember();
-      allow create: if isActiveMember()
-        && request.resource.data.createdBy == request.auth.token.email;
-      allow update: if isAdmin()
-        || (isActiveMember()
-          && resource.data.createdBy == request.auth.token.email
-          && resource.data.status == "pending"
-          && request.resource.data.status == "pending");
-      allow delete: if isAdmin()
-        || (isActiveMember()
-          && resource.data.createdBy == request.auth.token.email
-          && resource.data.status == "pending");
+      allow read: if isActiveMember(resource.data.messId);
+      allow create: if isAdmin(request.resource.data.messId);
+      allow update, delete: if isAdmin(resource.data.messId);
     }
 
     match /dailyMeals/{entryId} {
-      allow read: if isActiveMember();
-      allow create: if isActiveMember()
-        && request.resource.data.createdBy == request.auth.token.email
-        && (
-          isAdmin()
-          || isOwnMealDraft(request.resource.data)
-        );
-      allow update: if isAdmin()
-        || (isActiveMember()
-          && resource.data.createdBy == request.auth.token.email
-          && resource.data.lunch.boxCount == 0
-          && resource.data.dinner.boxCount == 0
+      allow read: if isActiveMember(resource.data.messId);
+      allow create: if isActiveMember(request.resource.data.messId)
+        && request.resource.data.createdBy == memberId(request.resource.data.messId)
+        && (isAdmin(request.resource.data.messId) || isOwnDailyMealDraft(request.resource.data));
+      allow update: if isAdmin(resource.data.messId)
+        || (isActiveMember(resource.data.messId)
+          && resource.data.createdBy == memberId(resource.data.messId)
           && resource.data.status == "pending"
           && request.resource.data.status == "pending"
-          && (
-            isAdmin()
-            || isOwnMealDraft(request.resource.data)
-          ));
-      allow delete: if isAdmin()
-        || (isActiveMember()
-          && resource.data.createdBy == request.auth.token.email
+          && isOwnDailyMealDraft(request.resource.data));
+      allow delete: if isAdmin(resource.data.messId)
+        || (isActiveMember(resource.data.messId)
+          && resource.data.createdBy == memberId(resource.data.messId)
           && resource.data.status == "pending");
     }
 
     match /expenses/{expenseId} {
-      allow read: if isActiveMember();
-      allow create: if isActiveMember()
-        && request.resource.data.createdBy == request.auth.token.email;
-      allow update: if isAdmin()
-        || (isActiveMember()
-          && resource.data.createdBy == request.auth.token.email
+      allow read: if isActiveMember(resource.data.messId);
+      allow create: if isActiveMember(request.resource.data.messId)
+        && request.resource.data.createdBy == memberId(request.resource.data.messId);
+      allow update: if isAdmin(resource.data.messId)
+        || (isActiveMember(resource.data.messId)
+          && resource.data.createdBy == memberId(resource.data.messId)
           && resource.data.status == "pending"
           && request.resource.data.status == "pending");
-      allow delete: if isAdmin()
-        || (isActiveMember()
-          && resource.data.createdBy == request.auth.token.email
+      allow delete: if isAdmin(resource.data.messId)
+        || (isActiveMember(resource.data.messId)
+          && resource.data.createdBy == memberId(resource.data.messId)
           && resource.data.status == "pending");
     }
 
-    match /settlements/{settlementId} {
-      allow read: if isActiveMember();
-      allow create: if isActiveMember()
-        && request.resource.data.createdBy == request.auth.token.email;
-      allow update, delete: if isAdmin();
-    }
-
     match /deposits/{depositId} {
-      allow read: if isActiveMember();
-      allow create: if isActiveMember()
-        && request.resource.data.createdBy == request.auth.token.email;
-      allow update, delete: if isAdmin();
+      allow read: if isActiveMember(resource.data.messId);
+      allow create: if isActiveMember(request.resource.data.messId)
+        && request.resource.data.createdBy == memberId(request.resource.data.messId);
+      allow update, delete: if isAdmin(resource.data.messId);
     }
   }
 }

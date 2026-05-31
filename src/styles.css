@@ -1043,6 +1043,43 @@ select:focus {
   padding: 12px;
 }
 
+.invite-result {
+  background: linear-gradient(135deg, rgba(216, 175, 84, 0.12), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(216, 175, 84, 0.28);
+  border-radius: var(--border-radius-lg);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.invite-result strong {
+  color: var(--primary);
+  display: block;
+  font-size: 0.98rem;
+}
+
+.invite-result span {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.84rem;
+  margin-top: 3px;
+}
+
+.invite-link-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.invite-link-row input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.invite-link-row button {
+  white-space: nowrap;
+}
+
 .chip {
   align-items: center;
   background: #ffffff;
@@ -2592,6 +2629,46 @@ td strong {
   width: 100%;
 }
 
+.setup-card {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(18, 40, 30, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 26px 70px rgba(18, 40, 30, 0.08);
+  display: grid;
+  gap: 22px;
+  max-width: 520px;
+  padding: 30px;
+  text-align: left;
+  width: min(100%, 520px);
+}
+
+.setup-card h1 {
+  color: var(--primary);
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
+.setup-card p {
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.mess-setup-card .form-grid {
+  gap: 14px;
+}
+
+.setup-card button svg {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: currentColor;
+  height: 18px;
+  padding: 0;
+  width: 18px;
+}
+
 .loading-brand {
   align-items: center;
   display: flex;
@@ -3227,6 +3304,14 @@ td strong {
   }
 
   .cycle-member-add .secondary {
+    width: 100%;
+  }
+
+  .invite-link-row {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-link-row button {
     width: 100%;
   }
 

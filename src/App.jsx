@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   Check,
   CircleDollarSign,
+  Copy,
   LogOut,
   Menu,
   Pencil,
@@ -22,13 +23,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   addRecord,
   auth,
-  bootstrapAdmin,
+  createInvite,
+  createMess,
   db,
   deleteRecord,
-  getMemberByEmail,
+  getMemberships,
+  getMess,
   getOpenCycle,
   hasFirebaseConfig,
-  initialAdminEmail,
+  joinInvite,
   setRecord,
   signInWithGoogle,
   signOutUser,
@@ -82,10 +85,21 @@ function writeLocalCache(name, value) {
   }
 }
 
+async function copyToClipboard(text) {
+  try {
+    if (!navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function collectionCacheName(collectionName, options = {}) {
   return [
     "collection",
     collectionName,
+    options.messId || "global",
     options.cycleId || "all",
     options.orderBy || "none",
     options.orderDirection || "asc",
@@ -147,21 +161,25 @@ function useCollection(collectionName, options = {}) {
   const [rows, setRows] = useState(() => readLocalCache(cacheName, []));
   const [loading, setLoading] = useState(true);
   const [serverSynced, setServerSynced] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const cachedRows = readLocalCache(cacheName, []);
     setRows(cachedRows);
     setServerSynced(false);
+    setError(null);
 
     if (!db || options.skip) {
       setRows([]);
       setLoading(false);
+      setServerSynced(true);
       return undefined;
     }
 
     const clauses = [];
+    if (options.messId) clauses.push(where("messId", "==", options.messId));
     if (options.cycleId) clauses.push(where("cycleId", "==", options.cycleId));
-    if (options.orderBy && !options.cycleId) clauses.push(orderBy(options.orderBy, options.orderDirection || "asc"));
+    if (options.orderBy && !options.cycleId && !options.messId) clauses.push(orderBy(options.orderBy, options.orderDirection || "asc"));
     const q = clauses.length ? query(collection(db, collectionName), ...clauses) : collection(db, collectionName);
 
     return onSnapshot(
@@ -169,7 +187,7 @@ function useCollection(collectionName, options = {}) {
       { includeMetadataChanges: true },
       (snap) => {
         const nextRows = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
-        if (options.orderBy && options.cycleId) {
+        if (options.orderBy && (options.cycleId || options.messId)) {
           nextRows.sort((a, b) => {
             const left = a[options.orderBy] || "";
             const right = b[options.orderBy] || "";
@@ -183,26 +201,32 @@ function useCollection(collectionName, options = {}) {
         }
         setLoading(false);
       },
-      () => {
+      (snapshotError) => {
+        console.error(`${collectionName} listener failed`, snapshotError);
+        setError(snapshotError);
         setRows(cachedRows);
         setLoading(false);
       },
     );
-  }, [cacheName, collectionName, options.cycleId, options.orderBy, options.orderDirection, options.retryToken, options.skip]);
+  }, [cacheName, collectionName, options.cycleId, options.messId, options.orderBy, options.orderDirection, options.retryToken, options.skip]);
 
-  return { rows, loading, serverSynced };
+  return { rows, error, loading, serverSynced };
 }
 
 export function App() {
   const [user, setUser] = useState(null);
   const [member, setMember] = useState(null);
+  const [memberships, setMemberships] = useState([]);
+  const [currentMess, setCurrentMess] = useState(null);
   const [currentCycle, setCurrentCycle] = useState(null);
   const [selectedHistoryCycleId, setSelectedHistoryCycleId] = useState("");
   const [activeView, setActiveView] = useState("dashboard");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [syncGateExpired, setSyncGateExpired] = useState(false);
   const [message, setMessage] = useState("");
   const { isOnline, retryConnection, retryToken } = useOnlineStatus();
+  const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite") || "", []);
 
   useEffect(() => {
     if (!message) return undefined;
@@ -220,6 +244,8 @@ export function App() {
       try {
         setUser(nextUser);
         setMember(null);
+        setMemberships([]);
+        setCurrentMess(null);
         setCurrentCycle(null);
         setBootstrapping(true);
         setMessage("");
@@ -231,19 +257,29 @@ export function App() {
 
         const email = nextUser.email.toLowerCase();
         const cachedSession = readLocalCache(`session:${email}`, null);
-        let appMember = await getMemberByEmail(email);
-        if (!appMember && initialAdminEmail && email === initialAdminEmail) {
-          appMember = await bootstrapAdmin(nextUser);
+        let joinedMember = null;
+        if (inviteToken) {
+          joinedMember = await joinInvite({ token: inviteToken, user: nextUser });
+          window.history.replaceState({}, document.title, window.location.pathname);
         }
+        const appMemberships = await getMemberships(email);
+        const nextMemberships = joinedMember && !appMemberships.some((item) => item.id === joinedMember.id) ? [joinedMember, ...appMemberships] : appMemberships;
+        const preferredMessId = joinedMember?.messId || cachedSession?.mess?.id || nextMemberships[0]?.messId || "";
+        const appMember = nextMemberships.find((item) => item.messId === preferredMessId) || nextMemberships[0] || null;
 
         if (appMember?.active) {
-          const openCycle = await getOpenCycle();
+          const mess = await getMess(appMember.messId);
+          const openCycle = await getOpenCycle(appMember.messId);
+          setMemberships(nextMemberships);
+          setCurrentMess(mess);
           setMember(appMember);
           setCurrentCycle(openCycle);
           setSelectedHistoryCycleId("");
           setMobileSidebarOpen(false);
-          writeLocalCache(`session:${email}`, { currentCycle: openCycle, member: appMember });
+          writeLocalCache(`session:${email}`, { currentCycle: openCycle, member: appMember, memberships: nextMemberships, mess });
         } else if (!navigator.onLine && cachedSession?.member?.active) {
+          setMemberships(cachedSession.memberships || [cachedSession.member]);
+          setCurrentMess(cachedSession.mess || null);
           setMember(cachedSession.member);
           setCurrentCycle(cachedSession.currentCycle || null);
           setSelectedHistoryCycleId("");
@@ -256,6 +292,8 @@ export function App() {
         const email = nextUser?.email?.toLowerCase();
         const cachedSession = email ? readLocalCache(`session:${email}`, null) : null;
         if (!navigator.onLine && cachedSession?.member?.active) {
+          setMemberships(cachedSession.memberships || [cachedSession.member]);
+          setCurrentMess(cachedSession.mess || null);
           setMember(cachedSession.member);
           setCurrentCycle(cachedSession.currentCycle || null);
           setSelectedHistoryCycleId("");
@@ -270,18 +308,19 @@ export function App() {
   }, []);
 
   const isAdmin = member?.role === "admin";
-  const { rows: members, serverSynced: membersSynced } = useCollection("members", { orderBy: "name", retryToken, skip: !member });
-  const { rows: cycles, serverSynced: cyclesSynced } = useCollection("cycles", { orderBy: "startDate", orderDirection: "desc", retryToken, skip: !member });
+  const messId = currentMess?.id || member?.messId || "";
+  const { rows: members, error: membersError, serverSynced: membersSynced } = useCollection("members", { messId, orderBy: "name", retryToken, skip: !member || !messId });
+  const { rows: cycles, error: cyclesError, serverSynced: cyclesSynced } = useCollection("cycles", { messId, orderBy: "startDate", orderDirection: "desc", retryToken, skip: !member || !messId });
   useEffect(() => {
     const openCycle = cycles.find((cycle) => cycle.status === "open");
-    setCurrentCycle(openCycle || null);
-  }, [cycles]);
+    setCurrentCycle((existingCycle) => openCycle || (!isOnline && existingCycle?.status === "open" ? existingCycle : null));
+  }, [cycles, isOnline]);
 
-  const { rows: dailyMeals, serverSynced: dailyMealsSynced } = useCollection("dailyMeals", { cycleId: currentCycle?.id, orderBy: "date", retryToken, skip: !currentCycle });
+  const { rows: dailyMeals, error: dailyMealsError, serverSynced: dailyMealsSynced } = useCollection("dailyMeals", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
   const mealEntries = useMemo(() => flattenDailyMeals(dailyMeals), [dailyMeals]);
-  const { rows: expenses, serverSynced: expensesSynced } = useCollection("expenses", { cycleId: currentCycle?.id, orderBy: "date", retryToken, skip: !currentCycle });
-  const { rows: deposits, serverSynced: depositsSynced } = useCollection("deposits", { cycleId: currentCycle?.id, orderBy: "date", retryToken, skip: !currentCycle });
-  const { rows: settingsRows, serverSynced: settingsSynced } = useCollection("settings", { retryToken, skip: !member });
+  const { rows: expenses, error: expensesError, serverSynced: expensesSynced } = useCollection("expenses", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
+  const { rows: deposits, error: depositsError, serverSynced: depositsSynced } = useCollection("deposits", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
+  const { rows: settingsRows, error: settingsError, serverSynced: settingsSynced } = useCollection("settings", { messId, retryToken, skip: !member || !messId });
   const settingsDoc = settingsRows[0] || {};
   const settings = {
     id: settingsDoc.id,
@@ -295,12 +334,23 @@ export function App() {
   const baseServerSynced = membersSynced && cyclesSynced && settingsSynced;
   const cycleServerSynced = !currentCycle || (dailyMealsSynced && depositsSynced && (!isCalculatedMonth || expensesSynced));
   const serverDataReady = isOnline && baseServerSynced && cycleServerSynced;
-  const readOnlyMode = Boolean(member) && (!isOnline || !serverDataReady);
+  const editingDataReady = serverDataReady || syncGateExpired;
+  const readOnlyMode = Boolean(member) && (!isOnline || !editingDataReady);
+  const syncErrors = [membersError, cyclesError, dailyMealsError, expensesError, depositsError, settingsError].filter(Boolean);
+
+  useEffect(() => {
+    setSyncGateExpired(false);
+    if (!member || !isOnline || serverDataReady) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setSyncGateExpired(true);
+    }, 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [currentCycle?.id, isOnline, member?.id, messId, retryToken, serverDataReady]);
 
   useEffect(() => {
     if (!member?.email || !serverDataReady) return;
-    writeLocalCache(`session:${member.email.toLowerCase()}`, { currentCycle, member });
-  }, [currentCycle, member, serverDataReady]);
+    writeLocalCache(`session:${member.email.toLowerCase()}`, { currentCycle, member, memberships, mess: currentMess });
+  }, [currentCycle, currentMess, member, memberships, serverDataReady]);
 
   useEffect(() => {
     if (!readOnlyMode) return undefined;
@@ -392,14 +442,37 @@ export function App() {
     return taka(totalDeposits - totalMessBazaars);
   }, [deposits, expenses, isCalculatedMonth]);
 
+  async function switchMess(memberIdToSelect) {
+    const nextMember = memberships.find((item) => item.id === memberIdToSelect);
+    if (!nextMember) return;
+    setMember(nextMember);
+    setCurrentMess(await getMess(nextMember.messId));
+    setCurrentCycle(await getOpenCycle(nextMember.messId));
+    setActiveView("dashboard");
+    setSelectedHistoryCycleId("");
+    setMobileSidebarOpen(false);
+  }
+
   if (!hasFirebaseConfig) return <SetupScreen />;
   if (bootstrapping) return <Shell message="Loading household data..." />;
   if (!user) return <LoginScreen />;
-  if (message && !member) return <SetupError message={message} />;
-  if (!member) return <AccessBlocked user={user} />;
+  if (!member) {
+    return (
+      <MessSetupScreen
+        inviteToken={inviteToken}
+        message={message}
+        setCurrentMess={setCurrentMess}
+        setMember={setMember}
+        setMemberships={setMemberships}
+        setMessage={setMessage}
+        user={user}
+      />
+    );
+  }
   if (!currentCycle) {
     return (
       <NoCycleScreen
+        currentMess={currentMess}
         isAdmin={isAdmin}
         member={member}
         members={members}
@@ -415,6 +488,7 @@ export function App() {
         onRetryConnection={retryConnection}
         readOnlyMode={readOnlyMode}
         serverDataReady={serverDataReady}
+        syncErrors={syncErrors}
       />
     );
   }
@@ -444,7 +518,7 @@ export function App() {
         <div className="brand">
           <div className="brand-mark">PB</div>
           <div>
-            <strong>Pakhir Basa</strong>
+            <strong>{currentMess?.name || "Pakhir Basa"}</strong>
             <span>Meal & Mess Tracker</span>
           </div>
         </div>
@@ -475,6 +549,13 @@ export function App() {
             <strong>{member.name}</strong>
             <span>{member.role}</span>
           </div>
+          {memberships.length > 1 ? (
+            <select className="mess-switcher" value={member.id} onChange={(event) => switchMess(event.target.value)}>
+              {memberships.map((membership) => (
+                <option key={membership.id} value={membership.id}>{membership.messName || membership.messId}</option>
+              ))}
+            </select>
+          ) : null}
           <button className="icon-button" title="Sign out" onClick={signOutUser}>
             <LogOut size={18} />
           </button>
@@ -486,7 +567,7 @@ export function App() {
           <div className="topbar-brand">
             <div className="topbar-logo">PB</div>
             <div>
-              <strong>Pakhir Basa</strong>
+              <strong>{currentMess?.name || "Pakhir Basa"}</strong>
               <span>Meal & Mess Tracker</span>
             </div>
           </div>
@@ -503,6 +584,7 @@ export function App() {
         </header>
 
         {readOnlyMode ? <OfflineBanner isOnline={isOnline} onRetry={retryConnection} serverDataReady={serverDataReady} /> : null}
+        {isOnline && syncErrors.length ? <div className="notice">Some live data could not sync. If editing fails, deploy the latest Firestore rules and retry.</div> : null}
         {message ? <div className="notice">{message}</div> : null}
 
         {activeView === "dashboard" ? (
@@ -559,7 +641,7 @@ export function App() {
             setMessage={setMessage}
           />
         ) : null}
-        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} cycleMembers={activeMembers} member={member} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
+        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} currentMess={currentMess} cycleMembers={activeMembers} member={member} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
         {activeView === "history" ? <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
       </main>
     </div>
@@ -619,6 +701,82 @@ function LoginScreen() {
   );
 }
 
+function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setMemberships, setMessage, user }) {
+  const [messName, setMessName] = useState("My Mess");
+  const [joining, setJoining] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  async function handleCreateMess(event) {
+    event.preventDefault();
+    try {
+      setCreating(true);
+      const { mess, member: createdMember } = await createMess({ name: messName, user });
+      setCurrentMess(mess);
+      setMember(createdMember);
+      setMemberships([createdMember]);
+      setMessage("Mess created. You are the admin.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleJoinInvite() {
+    if (!inviteToken) return;
+    try {
+      setJoining(true);
+      const joinedMember = await joinInvite({ token: inviteToken, user });
+      const mess = await getMess(joinedMember.messId);
+      setCurrentMess(mess);
+      setMember(joinedMember);
+      setMemberships([joinedMember]);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setMessage(`Joined ${mess?.name || "mess"}.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  return (
+    <div className="center-screen setup">
+      <div className="setup-card mess-setup-card">
+        <div className="loading-brand">
+          <div className="loading-brand__mark">PB</div>
+          <div>
+            <strong>Pakhir Basa</strong>
+            <span>Meal & Mess Tracker</span>
+          </div>
+        </div>
+        <div>
+          <h1>Create or join a mess</h1>
+          <p>Anyone can sign in now. Create a mess to become its admin, or use a one-time invite link from an existing mess.</p>
+        </div>
+        {message ? <div className="notice">{message}</div> : null}
+        {inviteToken ? (
+          <button className="primary" disabled={joining} type="button" onClick={handleJoinInvite}>
+            <Check size={18} /> {joining ? "Joining..." : "Join with invite link"}
+          </button>
+        ) : null}
+        <form className="form-grid" onSubmit={handleCreateMess}>
+          <label>
+            Mess name
+            <input value={messName} onChange={(event) => setMessName(event.target.value)} />
+          </label>
+          <button className="primary" disabled={creating} type="submit">
+            <Plus size={18} /> {creating ? "Creating..." : "Create new mess"}
+          </button>
+        </form>
+        <button className="secondary" type="button" onClick={signOutUser}>
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Shell({ message }) {
   return (
     <div className="center-screen setup">
@@ -644,7 +802,7 @@ function Shell({ message }) {
   );
 }
 
-function NoCycleScreen({ cycles, isAdmin, isOnline, member, members, onRetryConnection, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
+function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members, onRetryConnection, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, syncErrors, user }) {
   const selectableMembers = members
     .filter((item) => item.active)
     .sort((left, right) => {
@@ -682,7 +840,9 @@ function NoCycleScreen({ cycles, isAdmin, isOnline, member, members, onRetryConn
   async function startCycle(event) {
     event.preventDefault();
     if (!form.memberIds.length) return setMessage("Select at least one member for this month.");
+    const activeMessId = currentMess?.id || member.messId;
     const cycle = {
+      messId: activeMessId,
       name: form.name || "Current Month",
       status: "open",
       startDate: form.startDate,
@@ -694,8 +854,9 @@ function NoCycleScreen({ cycles, isAdmin, isOnline, member, members, onRetryConn
     const ref = await addRecord("cycles", cycle);
     const createdCycle = { id: ref.id, ...cycle };
     await setDoc(
-      doc(db, "settings", "main"),
+      doc(db, "settings", `${activeMessId}_main`),
       {
+        messId: activeMessId,
         mealRate: cycle.mealRate,
         mealRateMode: cycle.mealRateMode,
         mealRateMethod: cycle.mealRateMode,
@@ -725,7 +886,7 @@ function NoCycleScreen({ cycles, isAdmin, isOnline, member, members, onRetryConn
         <div className="brand">
           <div className="brand-mark">PB</div>
           <div>
-            <strong>Pakhir Basar</strong>
+            <strong>{currentMess?.name || "Pakhir Basa"}</strong>
             <span>Meal & Mess Tracker</span>
           </div>
         </div>
@@ -755,6 +916,7 @@ function NoCycleScreen({ cycles, isAdmin, isOnline, member, members, onRetryConn
       </aside>
       <main className="main no-cycle-main">
         {readOnlyMode ? <OfflineBanner isOnline={isOnline} onRetry={onRetryConnection} serverDataReady={serverDataReady} /> : null}
+        {isOnline && syncErrors.length ? <div className="notice">Some live data could not sync. If editing fails, deploy the latest Firestore rules and retry.</div> : null}
         {isAdmin && sidebarView === "history" ? (
           <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} />
         ) : (
@@ -1408,8 +1570,9 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       }
     }
 
-    const docId = `${currentCycle.id}_${date}`;
+    const docId = `${currentCycle.messId}_${currentCycle.id}_${date}`;
     const payload = {
+      messId: currentCycle.messId,
       cycleId: currentCycle.id,
       date,
       rateMode: getMealRateMode(settings),
@@ -1734,6 +1897,7 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
     event.preventDefault();
     if (Number(form.amount) <= 0) return setMessage("Add expense amount.");
     await addRecord("expenses", {
+      messId: currentCycle.messId,
       cycleId: currentCycle.id,
       date: form.date,
       title: form.title,
@@ -2113,6 +2277,7 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
     event.preventDefault();
     if (!form.memberId || Number(form.amount) <= 0) return setMessage("Select member and add a deposit amount.");
     await addRecord("deposits", {
+      messId: currentCycle.messId,
       cycleId: currentCycle.id,
       date: form.date,
       memberId: form.memberId,
@@ -2208,8 +2373,11 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
   );
 }
 
-function Members({ currentCycle, cycleMembers, member, members, setCurrentCycle, setMessage }) {
-  const [form, setForm] = useState({ name: "", email: "", role: "member" });
+function Members({ currentCycle, currentMess, cycleMembers, member, members, setCurrentCycle, setMessage }) {
+  const [form, setForm] = useState({ role: "member" });
+  const [inviteLink, setInviteLink] = useState("");
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [creatingInvite, setCreatingInvite] = useState(false);
   const [cycleMemberToAdd, setCycleMemberToAdd] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const householdActiveMembers = members.filter((item) => item.active);
@@ -2219,18 +2387,30 @@ function Members({ currentCycle, cycleMembers, member, members, setCurrentCycle,
 
   async function submitMember(event) {
     event.preventDefault();
-    if (!form.name || !form.email) return setMessage("Member name and Gmail are required.");
-    const email = form.email.toLowerCase();
-    await setDoc(doc(db, "members", email), {
-      name: form.name,
-      email,
-      role: form.role,
-      active: true,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    setForm({ name: "", email: "", role: "member" });
-    setMessage("Member added.");
+    try {
+      setCreatingInvite(true);
+      setInviteCopied(false);
+      const activeMessId = currentMess?.id || member.messId || currentCycle?.messId;
+      if (!activeMessId) throw new Error("No mess selected. Please reload the app or select a mess first.");
+      const token = await createInvite({ messId: activeMessId, messName: currentMess?.name || "", role: form.role, createdBy: member.id });
+      const link = `${window.location.origin}${window.location.pathname}?invite=${token}`;
+      setInviteLink(link);
+      const copied = await copyToClipboard(link);
+      setInviteCopied(copied);
+      setMessage(copied ? "Invite link created and copied." : "Invite link created. Copy it from the box below.");
+    } catch (error) {
+      console.error("Invite creation failed", error);
+      setMessage(error.code === "permission-denied" ? "Could not create invite. Deploy the latest firestore.rules, then try again." : error.message);
+    } finally {
+      setCreatingInvite(false);
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!inviteLink) return;
+    const copied = await copyToClipboard(inviteLink);
+    setInviteCopied(copied);
+    setMessage(copied ? "Invite link copied." : "Could not auto-copy. Select and copy the link manually.");
   }
 
   async function addMemberToCycle(memberId) {
@@ -2277,18 +2457,10 @@ function Members({ currentCycle, cycleMembers, member, members, setCurrentCycle,
     <div className="two-column">
       <section className="panel">
         <div className="section-heading">
-          <h2>Add member</h2>
-          <p>Only active listed Gmail accounts can access the app.</p>
+          <h2>Create invite link</h2>
+          <p>Invite links are one-time use. Choose whether the next person joins as admin or member.</p>
         </div>
         <form className="form-grid" onSubmit={submitMember}>
-          <label>
-            Name
-            <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          </label>
-          <label>
-            Gmail
-            <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-          </label>
           <label>
             Role
             <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>
@@ -2296,9 +2468,23 @@ function Members({ currentCycle, cycleMembers, member, members, setCurrentCycle,
               <option value="admin">Admin</option>
             </select>
           </label>
-          <button className="primary" type="submit">
-            <Plus size={18} /> Add member
+          <button className="primary" disabled={creatingInvite} type="submit">
+            <Plus size={18} /> {creatingInvite ? "Creating..." : "Create one-time link"}
           </button>
+          {inviteLink ? (
+            <div className="invite-result">
+              <div>
+                <strong>{inviteCopied ? "Copied. Share this link now." : "Share this one-time invite link."}</strong>
+                <span>{form.role === "admin" ? "The next person who uses it will join as admin." : "The next person who uses it will join as member."}</span>
+              </div>
+              <div className="invite-link-row">
+                <input aria-label="Invite link" readOnly value={inviteLink} onFocus={(event) => event.target.select()} />
+                <button className="secondary" type="button" onClick={copyInviteLink}>
+                  <Copy size={16} /> Copy
+                </button>
+              </div>
+            </div>
+          ) : null}
         </form>
       </section>
       <section className="panel">
