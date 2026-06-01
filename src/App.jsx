@@ -40,7 +40,7 @@ import {
 import { buildCycleSnapshot, calculateLedger, getCalculatedMealRate, getMealEntryRate, getMealRateMode, splitMeal, taka } from "./lib/calculations";
 
 const today = () => new Date().toISOString().slice(0, 10);
-const OFFLINE_NOTICE = "You’re offline. Showing last saved data. Editing will be available when you reconnect.";
+const OFFLINE_NOTICE = "You’re offline, so this is the last saved version. You can edit again once you’re back online.";
 const CACHE_PREFIX = "pakhir-basa";
 
 const emptyExpense = {
@@ -300,7 +300,7 @@ export function App() {
           setMobileSidebarOpen(false);
           setMessage("");
         } else {
-          setMessage(error.code === "permission-denied" ? "Firestore permission denied. Deploy the latest firestore.rules, then sign in again." : error.message);
+          setMessage(error.code === "permission-denied" ? "Couldn’t open your mess yet. Please sign out and try again." : error.message);
         }
         setBootstrapping(false);
       }
@@ -309,18 +309,18 @@ export function App() {
 
   const isAdmin = member?.role === "admin";
   const messId = currentMess?.id || member?.messId || "";
-  const { rows: members, error: membersError, serverSynced: membersSynced } = useCollection("members", { messId, orderBy: "name", retryToken, skip: !member || !messId });
-  const { rows: cycles, error: cyclesError, serverSynced: cyclesSynced } = useCollection("cycles", { messId, orderBy: "startDate", orderDirection: "desc", retryToken, skip: !member || !messId });
+  const { rows: members, serverSynced: membersSynced } = useCollection("members", { messId, orderBy: "name", retryToken, skip: !member || !messId });
+  const { rows: cycles, serverSynced: cyclesSynced } = useCollection("cycles", { messId, orderBy: "startDate", orderDirection: "desc", retryToken, skip: !member || !messId });
   useEffect(() => {
     const openCycle = cycles.find((cycle) => cycle.status === "open");
     setCurrentCycle((existingCycle) => openCycle || (!isOnline && existingCycle?.status === "open" ? existingCycle : null));
   }, [cycles, isOnline]);
 
-  const { rows: dailyMeals, error: dailyMealsError, serverSynced: dailyMealsSynced } = useCollection("dailyMeals", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
+  const { rows: dailyMeals, serverSynced: dailyMealsSynced } = useCollection("dailyMeals", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
   const mealEntries = useMemo(() => flattenDailyMeals(dailyMeals), [dailyMeals]);
-  const { rows: expenses, error: expensesError, serverSynced: expensesSynced } = useCollection("expenses", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
-  const { rows: deposits, error: depositsError, serverSynced: depositsSynced } = useCollection("deposits", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
-  const { rows: settingsRows, error: settingsError, serverSynced: settingsSynced } = useCollection("settings", { messId, retryToken, skip: !member || !messId });
+  const { rows: expenses, serverSynced: expensesSynced } = useCollection("expenses", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
+  const { rows: deposits, serverSynced: depositsSynced } = useCollection("deposits", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
+  const { rows: settingsRows, serverSynced: settingsSynced } = useCollection("settings", { messId, retryToken, skip: !member || !messId });
   const settingsDoc = settingsRows[0] || {};
   const settings = {
     id: settingsDoc.id,
@@ -336,7 +336,6 @@ export function App() {
   const serverDataReady = isOnline && baseServerSynced && cycleServerSynced;
   const editingDataReady = serverDataReady || syncGateExpired;
   const readOnlyMode = Boolean(member) && (!isOnline || !editingDataReady);
-  const syncErrors = [membersError, cyclesError, dailyMealsError, expensesError, depositsError, settingsError].filter(Boolean);
 
   useEffect(() => {
     setSyncGateExpired(false);
@@ -488,18 +487,17 @@ export function App() {
         onRetryConnection={retryConnection}
         readOnlyMode={readOnlyMode}
         serverDataReady={serverDataReady}
-        syncErrors={syncErrors}
       />
     );
   }
 
   const navigation = [
-    { id: "dashboard", label: "Dashboard", icon: CalendarCheck },
+    { id: "dashboard", label: "Home", icon: CalendarCheck },
     { id: "meals", label: "Meals", icon: Soup },
     { id: "expenses", label: "Expenses", icon: ReceiptText, calculatedOnly: true },
     { id: "deposits", label: "Deposits", icon: Wallet },
-    { id: "members", label: "Members", icon: Users, adminOnly: true },
-    { id: "history", label: "Cycle History", icon: Banknote },
+    { id: "members", label: "People", icon: Users, adminOnly: true },
+    { id: "history", label: "Old Months", icon: Banknote },
   ].filter((item) => (!item.adminOnly || isAdmin) && (!item.calculatedOnly || isCalculatedMonth));
 
   return (
@@ -519,7 +517,7 @@ export function App() {
           <div className="brand-mark">PB</div>
           <div>
             <strong>{currentMess?.name || "Pakhir Basa"}</strong>
-            <span>Meal & Mess Tracker</span>
+            <span>Meal Tracker</span>
           </div>
         </div>
 
@@ -568,11 +566,11 @@ export function App() {
             <div className="topbar-logo">PB</div>
             <div>
               <strong>{currentMess?.name || "Pakhir Basa"}</strong>
-              <span>Meal & Mess Tracker</span>
+              <span>Meal Tracker</span>
             </div>
           </div>
           <div className="topbar-page-title">
-            <p>{currentCycle?.name || "Current Cycle"}</p>
+            <p>{currentCycle?.name || "This month"}</p>
             <h1>{navigation.find((item) => item.id === activeView)?.label || "Dashboard"}</h1>
           </div>
           {/* <div className="top-actions">
@@ -584,7 +582,6 @@ export function App() {
         </header>
 
         {readOnlyMode ? <OfflineBanner isOnline={isOnline} onRetry={retryConnection} serverDataReady={serverDataReady} /> : null}
-        {isOnline && syncErrors.length ? <div className="notice">Some live data could not sync. If editing fails, deploy the latest Firestore rules and retry.</div> : null}
         {message ? <div className="notice">{message}</div> : null}
 
         {activeView === "dashboard" ? (
@@ -665,15 +662,15 @@ function OfflineBanner({ isOnline, onRetry, serverDataReady }) {
   return (
     <div className={isOnline ? "offline-banner syncing" : "offline-banner"} role="status">
       <div>
-        <strong>{isOnline && !serverDataReady ? "Syncing latest data" : "Offline read-only mode"}</strong>
+        <strong>{isOnline && !serverDataReady ? "Getting the latest meals" : "You’re offline"}</strong>
         <p>
           {isOnline && !serverDataReady
-            ? "Fetching the latest server data before editing is enabled."
+            ? "Hold on a moment while we check for the newest changes."
             : OFFLINE_NOTICE}
         </p>
       </div>
       <button className="secondary" data-offline-allowed="true" type="button" onClick={onRetry}>
-        <RotateCcw size={16} /> Retry
+        <RotateCcw size={16} /> Try again
       </button>
     </div>
   );
@@ -684,15 +681,15 @@ function LoginScreen() {
     <div className="login-screen">
       <section className="login-hero">
         <div>
-          <p>Meal tracking workspace</p>
+          <p>House meal tracker</p>
           <h1>Pakhir Basa Meal Tracker</h1>
-          <span>Track meals, costs, deposits, and cycle history in one place.</span>
+          <span>Keep meals, bazaar, deposits, and balances easy for everyone.</span>
         </div>
       </section>
       <section className="login-panel">
         <Soup size={36} />
-        <h2>Sign in to continue</h2>
-        <p>Use your Google account to open your meal tracker and continue where you left off.</p>
+        <h2>Come on in</h2>
+        <p>Sign in with Google to open your mess account.</p>
         <button className="primary" onClick={signInWithGoogle}>
           Continue with Google
         </button>
@@ -714,7 +711,7 @@ function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setM
       setCurrentMess(mess);
       setMember(createdMember);
       setMemberships([createdMember]);
-      setMessage("Mess created. You are the admin.");
+      setMessage("Mess created. You’re the admin for this mess.");
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -747,17 +744,17 @@ function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setM
           <div className="loading-brand__mark">PB</div>
           <div>
             <strong>Pakhir Basa</strong>
-            <span>Meal & Mess Tracker</span>
+            <span>Meal Tracker</span>
           </div>
         </div>
         <div>
-          <h1>Create or join a mess</h1>
-          <p>Anyone can sign in now. Create a mess to become its admin, or use a one-time invite link from an existing mess.</p>
+          <h1>Start or join a mess</h1>
+          <p>Create your own mess, or join one with an invite link from a housemate.</p>
         </div>
         {message ? <div className="notice">{message}</div> : null}
         {inviteToken ? (
           <button className="primary" disabled={joining} type="button" onClick={handleJoinInvite}>
-            <Check size={18} /> {joining ? "Joining..." : "Join with invite link"}
+            <Check size={18} /> {joining ? "Joining..." : "Join from invite"}
           </button>
         ) : null}
         <form className="form-grid" onSubmit={handleCreateMess}>
@@ -766,7 +763,7 @@ function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setM
             <input value={messName} onChange={(event) => setMessName(event.target.value)} />
           </label>
           <button className="primary" disabled={creating} type="submit">
-            <Plus size={18} /> {creating ? "Creating..." : "Create new mess"}
+            <Plus size={18} /> {creating ? "Creating..." : "Start a new mess"}
           </button>
         </form>
         <button className="secondary" type="button" onClick={signOutUser}>
@@ -785,14 +782,14 @@ function Shell({ message }) {
           <div className="loading-brand__mark">PB</div>
           <div>
             <strong>Pakhir Basa</strong>
-            <span>Meal & Mess Tracker</span>
+            <span>Meal Tracker</span>
           </div>
         </div>
         <div className="loading-orbit" aria-hidden="true">
           <Soup size={30} />
         </div>
         <div className="loading-copy">
-          <span className="eyebrow">Preparing workspace</span>
+          <span className="eyebrow">Getting things ready</span>
         </div>
         <div className="loading-progress" aria-hidden="true">
           <span />
@@ -802,7 +799,7 @@ function Shell({ message }) {
   );
 }
 
-function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members, onRetryConnection, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, syncErrors, user }) {
+function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members, onRetryConnection, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
   const selectableMembers = members
     .filter((item) => item.active)
     .sort((left, right) => {
@@ -839,7 +836,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
 
   async function startCycle(event) {
     event.preventDefault();
-    if (!form.memberIds.length) return setMessage("Select at least one member for this month.");
+    if (!form.memberIds.length) return setMessage("Pick at least one person for this month.");
     const activeMessId = currentMess?.id || member.messId;
     const cycle = {
       messId: activeMessId,
@@ -887,18 +884,18 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
           <div className="brand-mark">PB</div>
           <div>
             <strong>{currentMess?.name || "Pakhir Basa"}</strong>
-            <span>Meal & Mess Tracker</span>
+            <span>Meal Tracker</span>
           </div>
         </div>
         {isAdmin ? (
           <nav className="nav no-cycle-nav">
             <button className={sidebarView === "create" ? "nav-item active" : "nav-item"} onClick={() => { setSidebarView("create"); setMobileSidebarOpen(false); }}>
               <Plus size={18} />
-              <span>Create month</span>
+              <span>New month</span>
             </button>
             <button className={sidebarView === "history" ? "nav-item active" : "nav-item"} onClick={() => { setSidebarView("history"); setMobileSidebarOpen(false); }}>
               <Banknote size={18} />
-              <span>Cycle history</span>
+              <span>Old months</span>
               {cycles.filter((cycle) => cycle.status === "closed").length ? <b>{cycles.filter((cycle) => cycle.status === "closed").length}</b> : null}
             </button>
           </nav>
@@ -916,7 +913,6 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
       </aside>
       <main className="main no-cycle-main">
         {readOnlyMode ? <OfflineBanner isOnline={isOnline} onRetry={onRetryConnection} serverDataReady={serverDataReady} /> : null}
-        {isOnline && syncErrors.length ? <div className="notice">Some live data could not sync. If editing fails, deploy the latest Firestore rules and retry.</div> : null}
         {isAdmin && sidebarView === "history" ? (
           <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} />
         ) : (
@@ -924,8 +920,8 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
             <div className="no-cycle-hero">
               <div className="no-cycle-hero__copy">
                 <span className="eyebrow">Month setup</span>
-                <h2>No active month</h2>
-                <p>{isAdmin ? "Create a new month to start tracking meals, deposits, and expenses." : "A new month will appear here once it is created."}</p>
+                <h2>No month is running</h2>
+                <p>{isAdmin ? "Start a month when everyone is ready to track meals and money." : "You’ll see the month here once an admin starts it."}</p>
               </div>
               <div className="no-cycle-hero__badge">
                 <CalendarCheck size={18} />
@@ -937,17 +933,17 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
               <article>
                 <Soup size={18} />
                 <strong>Meals</strong>
-                <span>Track lunch and dinner entries in one place.</span>
+                <span>Add lunch and dinner for each day.</span>
               </article>
               <article>
                 <Wallet size={18} />
                 <strong>Deposits</strong>
-                <span>Keep advances and shared cash visible.</span>
+                <span>Keep everyone’s advance money clear.</span>
               </article>
               <article>
                 <Banknote size={18} />
-                <strong>History</strong>
-                <span>Review closed cycles when the month ends.</span>
+                <strong>Old months</strong>
+                <span>Check previous months after closing them.</span>
               </article>
             </div>
 
@@ -962,10 +958,10 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
                   <input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} />
                 </label>
                 <label>
-                  Meal rate mode
+                  Meal rate type
                   <select value={form.rateMode} onChange={(event) => setForm({ ...form, rateMode: event.target.value })}>
-                    <option value="static">Static meal rate</option>
-                    <option value="calculated">Calculated from expense and deposits</option>
+                    <option value="static">Fixed meal rate</option>
+                    <option value="calculated">Calculate from bazaar</option>
                   </select>
                 </label>
                 <label>
@@ -974,8 +970,8 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
                 </label>
                 <div className="cycle-member-picker">
                   <div>
-                    <strong>Members for this month</strong>
-                    <span>Only selected members will be counted in meals, deposits, and balances.</span>
+                    <strong>People for this month</strong>
+                    <span>Only these people will count in meals, deposits, and balances.</span>
                   </div>
                   <div className="member-picker">
                     {selectableMembers.map((person) => (
@@ -994,7 +990,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
                   </div>
                 </div>
                 <button className="primary no-cycle-form__submit" type="submit">
-                  <Plus size={18} /> Create month
+                  <Plus size={18} /> Start month
                 </button>
               </form>
             ) : null}
@@ -1033,42 +1029,42 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
     setMobileSidebarOpen(false);
     setCurrentCycle(null);
     setConfirmClose(false);
-    setMessage("Cycle closed. Admin can create the next month when ready.");
+    setMessage("Month closed. You can start the next one whenever you’re ready.");
   }
 
   return (
     <div className="stack">
       <section className="metrics">
         <Metric
-          label="Mess Cash Fund"
+          label="Mess Cash"
           value={formatTk(messCash)}
-          detail="Advances in Mess Wallet"
+          detail="Money currently in hand"
           icon={Wallet}
         />
         {isCalculatedMonth ? (
           <Metric
-            label="Groceries (Bazaar)"
+            label="Bazaar"
             value={formatTk(totals.bazaar)}
-            detail="Total spent on food bazaar"
+            detail="Food and grocery spending"
             icon={Soup}
           />
         ) : null}
         <Metric
-          label="Meals Eaten"
+          label="Meals"
           value={`${totals.boxes} meals`}
-          detail="Total boxes consumed"
+          detail="Total ordered meals"
           icon={CalendarCheck}
         />
         <Metric
-          label="Running Meal Rate"
+          label="Meal Rate"
           value={formatTk(totals.mealRate)}
-          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Weighted by approved meal entries"}
+          detail={getMealRateMode(settings) === "calculated" ? "Bazaar cost divided by meals" : "Rate used for saved meals"}
           icon={CircleDollarSign}
         />
         <Metric
-          label="Total Meal Cost"
+          label="Meal Cost"
           value={formatTk(totals.meals)}
-          detail={getMealRateMode(settings) === "calculated" ? "Bazaar/meal expenses divided by meals" : "Approved meal entries at their recorded rates"}
+          detail={getMealRateMode(settings) === "calculated" ? "Based on bazaar and meals" : "Saved meals with their rates"}
           icon={CircleDollarSign}
         />
       </section>
@@ -1079,11 +1075,11 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
         </button>
         {isCalculatedMonth ? (
           <button className="secondary" onClick={() => setActiveView("expenses")}>
-            <Plus size={18} /> Add expense
+          <Plus size={18} /> Add bazaar
           </button>
         ) : null}
         <button className="secondary" onClick={() => setActiveView("deposits")}>
-          <Plus size={18} /> Deposit / Advance
+          <Plus size={18} /> Add deposit
         </button>
       </section>
 
@@ -1092,23 +1088,23 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
       {isAdmin ? (
         <section className="admin-danger-zone">
           <div>
-            <span className="eyebrow">Admin controls</span>
-            <h2>Close current cycle</h2>
-            <p>Finalize this month, save the closing snapshot, and move the household to cycle history.</p>
+            <span className="eyebrow">Careful action</span>
+            <h2>Close this month</h2>
+            <p>This locks the month and saves the final balances for everyone.</p>
           </div>
           <button className="danger close-cycle-button" onClick={() => setConfirmClose(true)}>
-            Close cycle
+            Close month
           </button>
         </section>
       ) : null}
       <ConfirmModal
-        confirmLabel="Close cycle"
-        message="This will close the current month, save a read-only snapshot, and move everyone to the no-active-month state until an admin creates the next month."
+        confirmLabel="Close month"
+        message="This will lock the current month and save the final report. After that, you can start a fresh month."
         onCancel={() => setConfirmClose(false)}
         onConfirm={closeCycle}
         open={confirmClose}
-        requiredPhrase="close cycle"
-        title="Close current cycle?"
+        requiredPhrase="close month"
+        title="Close this month?"
       />
     </div>
   );
@@ -1178,12 +1174,12 @@ function MemberSummaryTable({ isCalculatedMonth, ledger, mealStats, members }) {
     <section className="panel member-summary">
       <div className="section-heading member-summary__heading">
         <div>
-          <span className="eyebrow">Household ledger</span>
-          <h2>Per-member summary</h2>
-          <p>Everyone can see meals, costs, deposits, and current balance.</p>
+          <span className="eyebrow">Everyone’s balance</span>
+          <h2>Member summary</h2>
+          <p>Meals, deposits, costs, and balance for each person.</p>
         </div>
         <div className="summary-note">
-          <span>{rows.length} active members</span>
+          <span>{rows.length} people</span>
           <span>{totalMeals.toFixed(1)} total meals</span>
         </div>
       </div>
@@ -1206,7 +1202,7 @@ function MemberSummaryTable({ isCalculatedMonth, ledger, mealStats, members }) {
                 <td>
                   <div className="member-cell">
                     <strong>{row.name}</strong>
-                    <span>{row.balance >= 0 ? "In credit" : "Needs settlement"}</span>
+                    <span>{row.balance >= 0 ? "Has balance" : "Needs to pay"}</span>
                   </div>
                 </td>
                 <td>{Number(mealStats[row.memberId]?.meals || 0).toFixed(1)}</td>
@@ -1247,7 +1243,7 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
     <section className="panel">
       <div className="section-heading">
         <h2>Meal calendar</h2>
-        <p>Click a date to inspect lunch and dinner details.</p>
+        <p>Tap a date to see what happened that day.</p>
       </div>
       <div className="calendar-toolbar">
         <input type="month" value={selectedDate.slice(0, 7)} onChange={(event) => setSelectedDate(`${event.target.value}-01`)} />
@@ -1269,17 +1265,17 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDetailDate(null)}>
           <div className="modal-card meal-details-modal" role="dialog" aria-modal="true" aria-labelledby="meal-details-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-heading meal-details-modal__heading">
-              <span className="eyebrow">Daily meal split</span>
+              <span className="eyebrow">Daily meals</span>
               <h2 id="meal-details-title">Meals on {detailDate}</h2>
-              <p>{detailEntries.length ? "Approved lunch and dinner split for this date." : "No approved meals were found for this date."}</p>
+              <p>{detailEntries.length ? "Lunch and dinner split for this date." : "No meals were saved for this date."}</p>
             </div>
             <div className="meal-details-summary">
               <article className="meal-details-summary__item">
-                <span>Total boxes ordered</span>
+                <span>Total ordered</span>
                 <strong>{detailEntries.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0)}</strong>
               </article>
               <article className="meal-details-summary__item">
-                <span>Active rate</span>
+                <span>Meal rate</span>
                 <strong>{formatTk(activeRate)}</strong>
               </article>
             </div>
@@ -1307,13 +1303,13 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
                       ))}
                     </div>
                     <div className="daily-meal-card__footer">
-                      <small>{Object.keys(shares).length} member{Object.keys(shares).length === 1 ? "" : "s"} split this meal</small>
+                      <small>{Object.keys(shares).length} person{Object.keys(shares).length === 1 ? "" : "s"} ate this meal</small>
                       <strong>{formatTk(totalShare)}</strong>
                     </div>
                   </article>
                 );
               })}
-              {!detailEntries.length ? <p className="empty">No approved meals for this date.</p> : null}
+              {!detailEntries.length ? <p className="empty">No meals for this date.</p> : null}
             </div>
             <div className="modal-actions">
               <button className="secondary" type="button" onClick={() => setDetailDate(null)}>Close</button>
@@ -1426,7 +1422,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
   const sessionRate = isCalculated ? getCalculatedMealRate({ mealEntries, expenses, settings }) : Number(settings.mealRate || 70);
   const canEditExisting = isAdmin || (existingDailyMeal?.createdBy === member.id && existingDailyMeal?.status === "pending");
   const canEditSheet = !existingDailyMeal || isEditingDay;
-  const selectedDayLabel = date === today() ? "today" : "selected date";
+  const selectedDayLabel = date === today() ? "today" : "this date";
   const cycleStartDate = currentCycle?.startDate || "";
   const isDateBeforeCycle = isBeforeDate(date, cycleStartDate);
   const lunchActiveRate = isCalculated ? sessionRate : Number(lunchRate || settings.mealRate || 70);
@@ -1548,7 +1544,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
     if (isDateBeforeCycle) {
       setIsEditingDay(true);
-      setMealFormError(`Meal date cannot be before this cycle started on ${cycleStartDate}.`);
+      setMealFormError(`This date is before the month started on ${cycleStartDate}.`);
       return;
     }
 
@@ -1559,20 +1555,20 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
     if (!lunchSkipped && !lunchEaters.length && !dinnerSkipped && !dinnerEaters.length) {
       setIsEditingDay(true);
-      setMealFormError("Please add lunch or dinner portions for at least one member.");
+      setMealFormError("Add lunch or dinner for at least one person.");
       return;
     }
 
     if (isAdmin) {
       if ((!lunchSkipped && lunchEaters.length && Number(lunchOrdered) <= 0) || (!dinnerSkipped && dinnerEaters.length && Number(dinnerOrdered) <= 0)) {
         setIsEditingDay(true);
-        setMealFormError("Ordered meals must be greater than zero for sessions that are not marked as skipped.");
+        setMealFormError("Add an ordered meal count, or mark that meal as skipped.");
         return;
       }
 
       if ((!lunchSkipped && lunchEaters.length && Math.abs(Number(lunchOrdered) - lunchDemandTotal) > 0.01) || (!dinnerSkipped && dinnerEaters.length && Math.abs(Number(dinnerOrdered) - dinnerDemandTotal) > 0.01)) {
         setIsEditingDay(true);
-        setMealFormError("Ordered meals must match the total member demand before saving.");
+        setMealFormError("Ordered meals should match everyone’s portions before saving.");
         return;
       }
     }
@@ -1602,11 +1598,11 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       setMessage(
         isAdmin
           ? `Daily meal sheet ${existingDailyMeal ? "updated" : "saved"} for ${date}.`
-          : "Daily meal sheet submitted for admin approval."
+          : "Meal saved. An admin will review it."
       );
     } catch (error) {
       console.error("Daily meal save failed", error);
-      setMessage(error.code === "permission-denied" ? "Could not save meal. Deploy the latest firestore.rules for dailyMeals, then try again." : error.message);
+      setMessage(error.code === "permission-denied" ? "Couldn’t save this meal. Please refresh and try again." : error.message);
     } finally {
       setIsSaving(false);
     }
@@ -1616,8 +1612,8 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     return (
       <section className="panel meal-empty-panel">
         <div className="section-heading">
-          <h2>Advanced daily meal sheet</h2>
-          <p>Select a date. If no meal has been added, start one blank daily sheet for that date.</p>
+          <h2>Daily meal sheet</h2>
+          <p>Pick a date and add lunch or dinner for everyone.</p>
         </div>
         <div className="meal-sheet-top compact">
           <label>
@@ -1625,15 +1621,15 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
             <input min={cycleStartDate} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
         </div>
-        {isDateBeforeCycle ? <p className="empty">This date is before the current cycle started on {cycleStartDate}.</p> : null}
+        {isDateBeforeCycle ? <p className="empty">This date is before this month started on {cycleStartDate}.</p> : null}
         <div className="date-empty-state">
           <Soup size={28} />
           <div>
             <strong>No meal added for {selectedDayLabel}</strong>
-            <p>This date has no lunch or dinner sheet yet.</p>
+            <p>Lunch and dinner are empty for this date.</p>
           </div>
           <button className="primary" disabled={isDateBeforeCycle} type="button" onClick={() => setIsEditingDay(true)}>
-            <Plus size={18} /> Add {selectedDayLabel}'s meal
+            <Plus size={18} /> Add meal
           </button>
         </div>
       </section>
@@ -1646,11 +1642,11 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
         <div className="section-heading">
           <div className="meal-heading-row">
             <div>
-              <h2>Advanced daily meal sheet</h2>
+              <h2>Daily meal sheet</h2>
               <p>
                 {existingDailyMeal
-                  ? `Showing saved meal for ${date}. ${canEditSheet ? "Update lunch, dinner, and portions." : "Open edit mode before changing anything."}`
-                  : "Enter total ordered meals for lunch and dinner, then assign member portions for the split."}
+                  ? `Showing ${date}. ${canEditSheet ? "Update lunch, dinner, and portions." : "Tap edit if you need to change it."}`
+                  : "Add lunch and dinner, then set each person’s portion."}
               </p>
             </div>
             {existingDailyMeal ? <span className={existingDailyMeal.status === "approved" ? "status-badge approved" : "status-badge pending"}>{existingDailyMeal.status}</span> : null}
@@ -1663,23 +1659,23 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               <input min={cycleStartDate} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </label>
           </div>
-          {isDateBeforeCycle ? <p className="empty">This date is before the current cycle started on {cycleStartDate}.</p> : null}
+          {isDateBeforeCycle ? <p className="empty">This date is before this month started on {cycleStartDate}.</p> : null}
 
           <div className="meal-day-summary">
             <article>
               <span>Lunch</span>
               <strong>{formatTk(lunchTotal)}</strong>
-              <small>{lunchSkipped ? "No lunch" : `${taka(lunchDemandTotal)} ordered · ${lunchPeople} members`}</small>
+              <small>{lunchSkipped ? "No lunch" : `${taka(lunchDemandTotal)} ordered · ${lunchPeople} people`}</small>
             </article>
             <article>
               <span>Dinner</span>
               <strong>{formatTk(dinnerTotal)}</strong>
-              <small>{dinnerSkipped ? "No dinner" : `${taka(dinnerDemandTotal)} ordered · ${dinnerPeople} members`}</small>
+              <small>{dinnerSkipped ? "No dinner" : `${taka(dinnerDemandTotal)} ordered · ${dinnerPeople} people`}</small>
             </article>
             <article>
               <span>Day total</span>
               <strong>{formatTk(lunchTotal + dinnerTotal)}</strong>
-              <small>{taka((lunchSkipped ? 0 : lunchDemandTotal) + (dinnerSkipped ? 0 : dinnerDemandTotal))} ordered meals</small>
+              <small>{taka((lunchSkipped ? 0 : lunchDemandTotal) + (dinnerSkipped ? 0 : dinnerDemandTotal))} meals ordered</small>
             </article>
           </div>
 
@@ -1735,19 +1731,19 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
           <div className="form-actions">
             {isAdmin && existingDailyMeal?.status === "pending" && !canEditSheet ? (
               <button className="primary" type="button" onClick={approveDailyMeal}>
-                <Check size={18} /> Approve selected date
+                <Check size={18} /> Approve
               </button>
             ) : null}
             {existingDailyMeal && !canEditSheet && canEditExisting ? (
               <button className="secondary" type="button" onClick={() => setIsEditingDay(true)}>
-                <Pencil size={18} /> Edit selected date
+                <Pencil size={18} /> Edit
               </button>
             ) : null}
             {canEditSheet ? (
               <>
                 {existingDailyMeal ? <button className="secondary" type="button" onClick={cancelEditing}>Cancel</button> : null}
                 <button className="primary" disabled={isSaving || isDateBeforeCycle} type="submit">
-                  <Check size={18} /> {isSaving ? "Saving..." : existingDailyMeal ? "Update selected date" : "Save selected date"}
+                  <Check size={18} /> {isSaving ? "Saving..." : existingDailyMeal ? "Update meal" : "Save meal"}
                 </button>
               </>
             ) : null}
@@ -1793,7 +1789,7 @@ function MealSessionEditor({
       <div className="meal-session-header">
         <div>
           <h3>{label}</h3>
-          <span>{skipped ? `No ${label.toLowerCase()} selected` : `${formatTk(estimatedTotal)} total · ${activeCount} members eating`}</span>
+          <span>{skipped ? `No ${label.toLowerCase()}` : `${formatTk(estimatedTotal)} total · ${activeCount} eating`}</span>
         </div>
         {allowCountEdit ? (
           <>
@@ -1902,7 +1898,7 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
 
   async function submitExpense(event) {
     event.preventDefault();
-    if (Number(form.amount) <= 0) return setMessage("Add expense amount.");
+    if (Number(form.amount) <= 0) return setMessage("Add the amount first.");
     await addRecord("expenses", {
       messId: currentCycle.messId,
       cycleId: currentCycle.id,
@@ -1919,15 +1915,15 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
       createdByName: member.name,
     });
     setForm({ ...emptyExpense, date: form.date });
-    setMessage(isAdmin ? "Expense added." : "Expense submitted for admin approval.");
+    setMessage(isAdmin ? "Expense added." : "Expense saved. An admin will review it.");
   }
 
   return (
     <div className="two-column">
       <section className="panel">
         <div className="section-heading">
-          <h2>Add mess fund expense</h2>
-          <p>All expenses here are paid from the shared mess fund.</p>
+          <h2>Add bazaar or expense</h2>
+          <p>Use this for spending from the shared mess cash.</p>
         </div>
         <form className="form-grid" onSubmit={submitExpense}>
           <label>
@@ -1951,7 +1947,7 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
             <input min="1" type="number" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
           </label>
           <div className="fund-note">
-            Paid by Mess Cash Fund
+            Paid from mess cash
           </div>
           <button className="primary" type="submit">
             <Plus size={18} /> Save expense
@@ -1966,7 +1962,7 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
 }
 
 function EntryList({ entries, isAdmin, members, type }) {
-  const title = type === "mealEntries" ? "Meal entries" : "Expense entries";
+  const title = type === "mealEntries" ? "Meals" : "Expenses";
   const pendingEntries = entries.filter((entry) => entry.status === "pending");
   const approvedEntries = entries.filter((entry) => entry.status !== "pending");
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -2036,7 +2032,7 @@ function EntryList({ entries, isAdmin, members, type }) {
         <div>
           <strong>{`${entry.title} · ${formatTk(entry.amount)}`}</strong>
           <span>
-            {entry.date} · {entry.status} · by {entry.createdByName || "admin"}
+            {entry.date} · {entry.status} · added by {entry.createdByName || "admin"}
           </span>
           <small>
             Paid by Mess Cash Fund
@@ -2068,17 +2064,17 @@ function EntryList({ entries, isAdmin, members, type }) {
         <p>
           {isAdmin
             ? pendingEntries.length
-              ? `${pendingEntries.length} pending entr${pendingEntries.length === 1 ? "y" : "ies"} need approval.`
-              : "No pending approvals right now."
-            : "Your pending submissions appear here until an admin approves them."}
+              ? `${pendingEntries.length} item${pendingEntries.length === 1 ? "" : "s"} waiting.`
+              : "Nothing waiting right now."
+            : "Your saved items show here while an admin checks them."}
         </p>
       </div>
       <div className="entry-list">
-        {pendingEntries.length ? <div className="entry-group-label">Pending approval</div> : null}
+        {pendingEntries.length ? <div className="entry-group-label">Waiting</div> : null}
         {pendingEntries.map(renderEntry)}
-        {pendingEntries.length && approvedEntries.length ? <div className="entry-group-label">Approved / recorded</div> : null}
+        {pendingEntries.length && approvedEntries.length ? <div className="entry-group-label">Saved</div> : null}
         {approvedEntries.map(renderEntry)}
-        {!entries.length ? <p className="empty">No entries yet.</p> : null}
+        {!entries.length ? <p className="empty">Nothing here yet.</p> : null}
       </div>
       <EntryEditModal
         entry={editTarget}
@@ -2096,7 +2092,7 @@ function EntryList({ entries, isAdmin, members, type }) {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
         open={Boolean(deleteTarget)}
-        title={`Delete ${type === "mealEntries" ? "meal entry" : "expense"}?`}
+        title={`Delete this ${type === "mealEntries" ? "meal" : "expense"}?`}
       />
     </section>
   );
@@ -2154,8 +2150,8 @@ function EntryEditModal({ entry, members, onCancel, onSave, type }) {
     <div className="modal-backdrop" role="presentation">
       <form className="modal-card edit-modal" onSubmit={save}>
         <div className="modal-heading">
-          <h2>{isMeal ? "Edit meal entry" : "Edit mess fund expense"}</h2>
-          <p>Update the date and details for this record.</p>
+          <h2>{isMeal ? "Edit meal" : "Edit expense"}</h2>
+          <p>Change anything that needs fixing.</p>
         </div>
         <div className="form-grid">
           <label>
@@ -2237,7 +2233,7 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
             <Shield size={22} />
           </div>
           <div className="modal-heading confirm-modal__heading">
-            <span className="eyebrow">Confirmation required</span>
+            <span className="eyebrow">Just checking</span>
             <h2 id="confirm-title">{title}</h2>
             <p>{message}</p>
           </div>
@@ -2245,7 +2241,7 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
         <div className="confirm-modal__footer">
           <div className="confirm-modal__note">
             <Trash2 size={16} />
-            <span>This action needs an explicit confirmation before anything changes.</span>
+            <span>Please confirm so this doesn’t happen by accident.</span>
           </div>
           {requiresPhrase ? (
             <label className="confirm-modal__phrase">
@@ -2282,7 +2278,7 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
 
   async function submitDeposit(event) {
     event.preventDefault();
-    if (!form.memberId || Number(form.amount) <= 0) return setMessage("Select member and add a deposit amount.");
+    if (!form.memberId || Number(form.amount) <= 0) return setMessage("Choose a person and add the deposit amount.");
     await addRecord("deposits", {
       messId: currentCycle.messId,
       cycleId: currentCycle.id,
@@ -2295,15 +2291,15 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
       createdByName: member.name,
     });
     setForm({ ...form, amount: "", note: "Advance deposit" });
-    setMessage(isAdmin ? "Deposit added." : "Deposit submitted for admin approval.");
+    setMessage(isAdmin ? "Deposit added." : "Deposit saved. An admin will review it.");
   }
 
   return (
     <div className="two-column">
       <section className="panel">
         <div className="section-heading">
-          <h2>Add deposit or advance</h2>
-          <p>Track money members hand in to the mess cash fund.</p>
+          <h2>Add deposit</h2>
+          <p>Use this when someone gives money to the mess.</p>
         </div>
         <form className="form-grid" onSubmit={submitDeposit}>
           <label>
@@ -2335,8 +2331,8 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
       </section>
       <section className="panel">
         <div className="section-heading">
-          <h2>Deposit entries</h2>
-          <p>Pending member entries wait for admin approval.</p>
+          <h2>Deposits</h2>
+          <p>Money added by everyone this month.</p>
         </div>
         <div className="entry-list">
           {visibleDeposits.map((deposit) => (
@@ -2374,7 +2370,7 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
           setDeleteTarget(null);
         }}
         open={Boolean(deleteTarget)}
-        title="Delete deposit?"
+        title="Delete this deposit?"
       />
     </div>
   );
@@ -2398,16 +2394,16 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
       setCreatingInvite(true);
       setInviteCopied(false);
       const activeMessId = currentMess?.id || member.messId || currentCycle?.messId;
-      if (!activeMessId) throw new Error("No mess selected. Please reload the app or select a mess first.");
+      if (!activeMessId) throw new Error("No mess is selected. Refresh once and try again.");
       const token = await createInvite({ messId: activeMessId, messName: currentMess?.name || "", role: form.role, createdBy: member.id });
       const link = `${window.location.origin}${window.location.pathname}?invite=${token}`;
       setInviteLink(link);
       const copied = await copyToClipboard(link);
       setInviteCopied(copied);
-      setMessage(copied ? "Invite link created and copied." : "Invite link created. Copy it from the box below.");
+      setMessage(copied ? "Invite link is ready and copied." : "Invite link is ready. Copy it below.");
     } catch (error) {
       console.error("Invite creation failed", error);
-      setMessage(error.code === "permission-denied" ? "Could not create invite. Deploy the latest firestore.rules, then try again." : error.message);
+      setMessage(error.code === "permission-denied" ? "Couldn’t make the invite link. Please refresh and try again." : error.message);
     } finally {
       setCreatingInvite(false);
     }
@@ -2417,7 +2413,7 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
     if (!inviteLink) return;
     const copied = await copyToClipboard(inviteLink);
     setInviteCopied(copied);
-    setMessage(copied ? "Invite link copied." : "Could not auto-copy. Select and copy the link manually.");
+    setMessage(copied ? "Invite link copied." : "Couldn’t auto-copy. Select the link and copy it manually.");
   }
 
   async function addMemberToCycle(memberId) {
@@ -2425,14 +2421,14 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
     await updateRecord("cycles", currentCycle.id, { memberIds: nextMemberIds });
     setCurrentCycle({ ...currentCycle, memberIds: nextMemberIds });
     setCycleMemberToAdd("");
-    setMessage("Member added to this month.");
+    setMessage("Person added to this month.");
   }
 
   async function deleteMemberFromWorkspace() {
     if (!deleteTarget) return;
     if (deleteTarget.role === "admin") {
       setDeleteTarget(null);
-      return setMessage("Admin accounts cannot be deleted. Change their role first.");
+      return setMessage("Admins can’t be deleted. Change their role first.");
     }
 
     const nextMemberIds = includedIds.filter((id) => id !== deleteTarget.id);
@@ -2443,19 +2439,19 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
 
     await deleteRecord("members", deleteTarget.id);
     setDeleteTarget(null);
-    setMessage("Member deleted from workspace.");
+    setMessage("Person removed from this mess.");
   }
 
   async function changeMemberRole(person, role) {
     if (person.role === "admin" && role !== "admin" && activeAdminCount <= 1) {
-      return setMessage("There must always be at least one active admin.");
+      return setMessage("Keep at least one active admin.");
     }
     await updateRecord("members", person.id, { role });
   }
 
   async function toggleMemberActive(person) {
     if (person.active && person.role === "admin" && activeAdminCount <= 1) {
-      return setMessage("There must always be at least one active admin.");
+      return setMessage("Keep at least one active admin.");
     }
     await updateRecord("members", person.id, { active: !person.active });
   }
@@ -2464,8 +2460,8 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
     <div className="two-column">
       <section className="panel">
         <div className="section-heading">
-          <h2>Create invite link</h2>
-          <p>Invite links are one-time use. Choose whether the next person joins as admin or member.</p>
+          <h2>Invite someone</h2>
+          <p>Make a one-time link for the next housemate. Pick their role first.</p>
         </div>
         <form className="form-grid" onSubmit={submitMember}>
           <label>
@@ -2476,13 +2472,13 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
             </select>
           </label>
           <button className="primary" disabled={creatingInvite} type="submit">
-            <Plus size={18} /> {creatingInvite ? "Creating..." : "Create one-time link"}
+            <Plus size={18} /> {creatingInvite ? "Creating..." : "Create invite link"}
           </button>
           {inviteLink ? (
             <div className="invite-result">
               <div>
-                <strong>{inviteCopied ? "Copied. Share this link now." : "Share this one-time invite link."}</strong>
-                <span>{form.role === "admin" ? "The next person who uses it will join as admin." : "The next person who uses it will join as member."}</span>
+                <strong>{inviteCopied ? "Copied. Send it now." : "Share this invite link."}</strong>
+                <span>{form.role === "admin" ? "The next person will join as admin." : "The next person will join as member."}</span>
               </div>
               <div className="invite-link-row">
                 <input aria-label="Invite link" readOnly value={inviteLink} onFocus={(event) => event.target.select()} />
@@ -2496,16 +2492,16 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
       </section>
       <section className="panel">
         <div className="section-heading">
-          <h2>Household members</h2>
-          <p>Manage role, access status, and who is counted in the current month.</p>
+          <h2>People in this mess</h2>
+          <p>Manage roles, access, and who counts this month.</p>
         </div>
         <div className="cycle-member-manager">
           <div className="cycle-member-manager__header">
             <div>
-              <span className="eyebrow">Current cycle</span>
-              <p>Only these members are counted in meals, deposits, and balances.</p>
+              <span className="eyebrow">This month</span>
+              <p>Only these people count in meals, deposits, and balances.</p>
             </div>
-            <span className="cycle-member-count">{includedIds.length} selected</span>
+            <span className="cycle-member-count">{includedIds.length} picked</span>
           </div>
           <div className="cycle-member-pills">
             {cycleMembers.map((person) => (
@@ -2515,7 +2511,7 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
           {availableForCycle.length ? (
             <div className="cycle-member-add">
               <label>
-                Add member
+                Add person
                 <select value={cycleMemberToAdd} onChange={(event) => setCycleMemberToAdd(event.target.value)}>
                   <option value="">Choose someone</option>
                   {availableForCycle.map((person) => (
@@ -2528,7 +2524,7 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
               </button>
             </div>
           ) : (
-            <p className="cycle-member-complete">All active household members are already included this month.</p>
+            <p className="cycle-member-complete">Everyone active is already in this month.</p>
           )}
         </div>
         <div className="entry-list">
@@ -2552,7 +2548,7 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
                 <button
                   className="delete-member-button"
                   disabled={person.role === "admin"}
-                  title={person.role === "admin" ? "Admin accounts cannot be deleted while they are admin" : "Delete member"}
+                  title={person.role === "admin" ? "Admins can’t be deleted while they are admin" : "Delete person"}
                   onClick={() => setDeleteTarget(person)}
                 >
                   <Trash2 size={17} />
@@ -2563,12 +2559,12 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
         </div>
       </section>
       <ConfirmModal
-        confirmLabel="Delete member"
-        message={deleteTarget ? `${deleteTarget.name} will be removed from the workspace and from this month. Existing historical entries are not edited.` : ""}
+        confirmLabel="Delete person"
+        message={deleteTarget ? `${deleteTarget.name} will be removed from this mess and this month. Old saved records will stay as they are.` : ""}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={deleteMemberFromWorkspace}
         open={Boolean(deleteTarget)}
-        title="Delete member from workspace?"
+        title="Delete this person?"
       />
     </div>
   );
@@ -2585,7 +2581,7 @@ function MemberNameEditor({ person, setMessage }) {
     const nextName = name.trim();
     if (!nextName || nextName === person.name) return;
     await updateRecord("members", person.id, { name: nextName });
-    setMessage("Member name updated.");
+    setMessage("Name updated.");
   }
 
   return (
@@ -2635,9 +2631,9 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
   return (
     <section className="panel history-panel">
       <div className="section-heading">
-        <span className="eyebrow">Archive</span>
-        <h2>Closed cycles</h2>
-        <p>Each closed cycle keeps a balance snapshot with per-member meals, deposits, costs, and balance.</p>
+        <span className="eyebrow">Old months</span>
+        <h2>Closed months</h2>
+        <p>See the final meal count, deposits, costs, and balances from past months.</p>
       </div>
       {selectedCycle ? (
         <div className="history-item history-item--detail">
@@ -2659,15 +2655,15 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
 
           <div className="history-kpis">
             <article>
-              <span>Total meals</span>
+              <span>Meals</span>
               <strong>{formatTk(selectedCycle.snapshot?.totals?.meals || 0)}</strong>
             </article>
             <article>
-              <span>Total deposits</span>
+              <span>Deposits</span>
               <strong>{formatTk(selectedCycle.snapshot?.totals?.deposits || 0)}</strong>
             </article>
             <article>
-              <span>Total expenses</span>
+              <span>Expenses</span>
               <strong>{formatTk(selectedCycle.snapshot?.totals?.expenses || 0)}</strong>
             </article>
             <article>
@@ -2681,7 +2677,7 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
               <div className="history-member-row" key={day.date}>
                 <div className="history-member-row__name">
                   <strong>{day.date}</strong>
-                  <span>{day.meals.length} meal entr{day.meals.length === 1 ? "y" : "ies"}</span>
+                  <span>{day.meals.length} saved meal{day.meals.length === 1 ? "" : "s"}</span>
                 </div>
                 <div className="history-member-row__metrics">
                   <span><em>Meal total</em>{formatTk(day.mealTotal)}</span>
@@ -2694,7 +2690,7 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
                   ))}
                 </div>
               </div>
-            )) : <p className="empty">This cycle has no stored date-level entries.</p>}
+            )) : <p className="empty">No day-by-day records saved for this month.</p>}
           </div>
         </div>
       ) : null}
@@ -2711,15 +2707,15 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
 
             <div className="history-kpis">
               <article>
-                <span>Total meals</span>
+                <span>Meals</span>
                 <strong>{formatTk(cycle.snapshot?.totals?.meals || 0)}</strong>
               </article>
               <article>
-                <span>Total deposits</span>
+                <span>Deposits</span>
                 <strong>{formatTk(cycle.snapshot?.totals?.deposits || 0)}</strong>
               </article>
               <article>
-                <span>Total expenses</span>
+                <span>Expenses</span>
                 <strong>{formatTk(cycle.snapshot?.totals?.expenses || 0)}</strong>
               </article>
               <article>
@@ -2733,7 +2729,7 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
                 <div className="history-member-row" key={row.memberId}>
                   <div className="history-member-row__name">
                     <strong>{row.name}</strong>
-                    <span>{row.balance >= 0 ? "In credit" : "Needs settlement"}</span>
+                    <span>{row.balance >= 0 ? "Has balance" : "Needs to pay"}</span>
                   </div>
                   <div className="history-member-row__metrics">
                     <span><em>Meals</em>{Number(row.mealCount || 0).toFixed(1)}</span>
@@ -2747,7 +2743,7 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
             </div>
           </article>
         ))}
-        {!closed.length ? <p className="empty">No closed cycles yet.</p> : null}
+        {!closed.length ? <p className="empty">No old months yet.</p> : null}
       </div>
     </section>
   );

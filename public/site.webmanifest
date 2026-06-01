@@ -1,7 +1,7 @@
 {
   "name": "Pakhir Basa Meal Tracker",
   "short_name": "Pakhir Basa",
-  "description": "Meal and mess tracker for a shared household.",
+  "description": "Shared house meals, bazaar, deposits, and balances.",
   "id": "/",
   "lang": "en",
   "start_url": "/",
