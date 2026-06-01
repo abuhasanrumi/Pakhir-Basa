@@ -156,6 +156,16 @@ function flattenDailyMeals(dailyMeals = []) {
   );
 }
 
+async function enrichMembershipsWithMessNames(memberships = []) {
+  return Promise.all(
+    memberships.map(async (membership) => {
+      if (membership.messName) return membership;
+      const mess = await getMess(membership.messId);
+      return { ...membership, messName: mess?.name || membership.messName || "Unnamed mess" };
+    }),
+  );
+}
+
 function useCollection(collectionName, options = {}) {
   const cacheName = collectionCacheName(collectionName, options);
   const [rows, setRows] = useState(() => readLocalCache(cacheName, []));
@@ -263,7 +273,7 @@ export function App() {
           window.history.replaceState({}, document.title, window.location.pathname);
         }
         const appMemberships = await getMemberships(email);
-        const nextMemberships = joinedMember && !appMemberships.some((item) => item.id === joinedMember.id) ? [joinedMember, ...appMemberships] : appMemberships;
+        const nextMemberships = await enrichMembershipsWithMessNames(joinedMember && !appMemberships.some((item) => item.id === joinedMember.id) ? [joinedMember, ...appMemberships] : appMemberships);
         const preferredMessId = joinedMember?.messId || cachedSession?.mess?.id || nextMemberships[0]?.messId || "";
         const appMember = nextMemberships.find((item) => item.messId === preferredMessId) || nextMemberships[0] || null;
 
@@ -444,9 +454,12 @@ export function App() {
   async function switchMess(memberIdToSelect) {
     const nextMember = memberships.find((item) => item.id === memberIdToSelect);
     if (!nextMember) return;
-    setMember(nextMember);
-    setCurrentMess(await getMess(nextMember.messId));
+    const mess = await getMess(nextMember.messId);
+    const memberWithName = { ...nextMember, messName: mess?.name || nextMember.messName || "Unnamed mess" };
+    setMember(memberWithName);
+    setCurrentMess(mess);
     setCurrentCycle(await getOpenCycle(nextMember.messId));
+    setMemberships((current) => current.map((item) => item.id === memberWithName.id ? memberWithName : item));
     setActiveView("dashboard");
     setSelectedHistoryCycleId("");
     setMobileSidebarOpen(false);
@@ -482,6 +495,8 @@ export function App() {
         setSelectedHistoryCycleId={setSelectedHistoryCycleId}
         setMessage={setMessage}
         sidebarOpen={mobileSidebarOpen}
+        memberships={memberships}
+        onSwitchMess={switchMess}
         user={user}
         isOnline={isOnline}
         onRetryConnection={retryConnection}
@@ -541,19 +556,14 @@ export function App() {
           })}
         </nav>
 
+        <MessSwitcher currentMemberId={member.id} currentMess={currentMess} memberships={memberships} onSwitchMess={switchMess} />
+
         <div className="profile">
           <img src={user.photoURL} alt="" />
           <div>
             <strong>{member.name}</strong>
             <span>{member.role}</span>
           </div>
-          {memberships.length > 1 ? (
-            <select className="mess-switcher" value={member.id} onChange={(event) => switchMess(event.target.value)}>
-              {memberships.map((membership) => (
-                <option key={membership.id} value={membership.id}>{membership.messName || membership.messId}</option>
-              ))}
-            </select>
-          ) : null}
           <button className="icon-button" title="Sign out" onClick={signOutUser}>
             <LogOut size={18} />
           </button>
@@ -672,6 +682,24 @@ function OfflineBanner({ isOnline, onRetry, serverDataReady }) {
       <button className="secondary" data-offline-allowed="true" type="button" onClick={onRetry}>
         <RotateCcw size={16} /> Try again
       </button>
+    </div>
+  );
+}
+
+function MessSwitcher({ currentMemberId, currentMess, memberships, onSwitchMess }) {
+  if (memberships.length <= 1) return null;
+
+  return (
+    <div className="mess-switcher-card">
+      <span>Current mess</span>
+      <strong>{currentMess?.name || memberships.find((item) => item.id === currentMemberId)?.messName || "This mess"}</strong>
+      <select value={currentMemberId} onChange={(event) => onSwitchMess(event.target.value)}>
+        {memberships.map((membership) => (
+          <option key={membership.id} value={membership.id}>
+            {membership.messName || "Unnamed mess"} · {membership.role}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -799,7 +827,7 @@ function Shell({ message }) {
   );
 }
 
-function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members, onRetryConnection, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
+function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, memberships, members, onRetryConnection, onSwitchMess, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
   const selectableMembers = members
     .filter((item) => item.active)
     .sort((left, right) => {
@@ -900,6 +928,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
             </button>
           </nav>
         ) : null}
+        <MessSwitcher currentMemberId={member.id} currentMess={currentMess} memberships={memberships} onSwitchMess={onSwitchMess} />
         <div className="profile">
           <img src={user.photoURL} alt="" />
           <div>
