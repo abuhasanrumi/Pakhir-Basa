@@ -1871,15 +1871,18 @@ function MealSessionEditor({
                 </div>
               </label>
             </div>
-            <div className="meal-quick-actions">
-              <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>
-              <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0.5)}>All 0.5</button>
-              <button disabled={portionControlsDisabled} type="button" onClick={() => setEvenSplit(setPortions, ordered)}>Split evenly</button>
-              <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0)}>Clear</button>
-            </div>
           </>
         ) : null}
       </div>
+
+      {allowCountEdit ? (
+        <div className="meal-quick-actions">
+          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>
+          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0.5)}>All 0.5</button>
+          <button disabled={portionControlsDisabled} type="button" onClick={() => setEvenSplit(setPortions, ordered)}>Split evenly</button>
+          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0)}>Clear</button>
+        </div>
+      ) : null}
 
       <div className="meal-member-list">
         {activeMembers.map((person) => (

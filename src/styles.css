@@ -1466,6 +1466,7 @@ select:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: -2px;
 }
 
 .meal-quick-actions button {
