@@ -1794,11 +1794,31 @@ function MealSessionEditor({
         {allowCountEdit ? (
           <>
             <div className="session-controls">
-              <label>
+              <label className="ordered-field">
                 Ordered meals
                 <input disabled={portionControlsDisabled} min="0" step="0.5" type="number" value={ordered} onChange={(event) => setOrdered(event.target.value)} />
               </label>
-              <label>
+              <div className="ordered-meal-pills" aria-label={`${label} ordered meals quick choices`}>
+                {[1, 2, 3, 4].map((count) => (
+                  <button
+                    className={Number(ordered) === count ? "active" : ""}
+                    disabled={portionControlsDisabled}
+                    key={count}
+                    type="button"
+                    onClick={() => setOrdered(count)}
+                  >
+                    {count}
+                  </button>
+                ))}
+                <button
+                  disabled={portionControlsDisabled}
+                  type="button"
+                  onClick={() => setOrdered(taka((Number(ordered) || 0) + 1))}
+                >
+                  More
+                </button>
+              </div>
+              <label className="rate-field">
                 Rate
                 <div className={editingRate ? "rate-inline-editor editing" : "rate-inline-editor"}>
                   {editingRate ? (
@@ -1850,26 +1870,6 @@ function MealSessionEditor({
                   </button>
                 </div>
               </label>
-            </div>
-            <div className="ordered-meal-pills" aria-label={`${label} ordered meals quick choices`}>
-              {[1, 2, 3, 4, 5, 6, 7].map((count) => (
-                <button
-                  className={Number(ordered) === count ? "active" : ""}
-                  disabled={portionControlsDisabled}
-                  key={count}
-                  type="button"
-                  onClick={() => setOrdered(count)}
-                >
-                  {count}
-                </button>
-              ))}
-              <button
-                disabled={portionControlsDisabled}
-                type="button"
-                onClick={() => setOrdered(taka((Number(ordered) || 0) + 1))}
-              >
-                More
-              </button>
             </div>
             <div className="meal-quick-actions">
               <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>

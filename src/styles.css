@@ -1349,7 +1349,18 @@ select:focus {
 .session-controls {
   display: grid;
   gap: 12px;
+  grid-template-areas:
+    "ordered rate"
+    "pills pills";
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ordered-field {
+  grid-area: ordered;
+}
+
+.rate-field {
+  grid-area: rate;
 }
 
 .session-controls input:disabled {
@@ -1416,6 +1427,7 @@ select:focus {
   display: flex;
   flex-wrap: nowrap;
   gap: 7px;
+  grid-area: pills;
   max-width: 100%;
   overflow-x: auto;
   padding-bottom: 2px;
@@ -3184,6 +3196,13 @@ td strong {
   .meal-member-row,
   .session-controls {
     grid-template-columns: 1fr;
+  }
+
+  .session-controls {
+    grid-template-areas:
+      "ordered"
+      "pills"
+      "rate";
   }
 
 .summary-table th,
