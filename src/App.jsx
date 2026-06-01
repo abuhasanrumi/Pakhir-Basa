@@ -1851,6 +1851,26 @@ function MealSessionEditor({
                 </div>
               </label>
             </div>
+            <div className="ordered-meal-pills" aria-label={`${label} ordered meals quick choices`}>
+              {[1, 2, 3, 4, 5, 6, 7].map((count) => (
+                <button
+                  className={Number(ordered) === count ? "active" : ""}
+                  disabled={portionControlsDisabled}
+                  key={count}
+                  type="button"
+                  onClick={() => setOrdered(count)}
+                >
+                  {count}
+                </button>
+              ))}
+              <button
+                disabled={portionControlsDisabled}
+                type="button"
+                onClick={() => setOrdered(taka((Number(ordered) || 0) + 1))}
+              >
+                More
+              </button>
+            </div>
             <div className="meal-quick-actions">
               <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>
               <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0.5)}>All 0.5</button>

@@ -1404,11 +1404,50 @@ select:focus {
 }
 
 .rate-inline-editor button:disabled,
+.ordered-meal-pills button:disabled,
 .meal-quick-actions button:disabled,
 .portion-controls button:disabled {
   background: rgba(18, 40, 30, 0.035);
   color: var(--text-muted);
   transform: none;
+}
+
+.ordered-meal-pills {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 7px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ordered-meal-pills button {
+  background: #ffffff;
+  border: 1px solid rgba(18, 40, 30, 0.1);
+  border-radius: 999px;
+  color: var(--primary-light);
+  flex: 0 0 auto;
+  font-size: 0.86rem;
+  font-weight: 800;
+  min-height: 34px;
+  min-width: 38px;
+  padding: 6px 12px;
+}
+
+.ordered-meal-pills button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+.ordered-meal-pills button:hover {
+  border-color: var(--accent);
+  color: var(--primary);
+}
+
+.ordered-meal-pills button.active:hover {
+  color: #ffffff;
 }
 
 .meal-quick-actions {
