@@ -577,6 +577,27 @@ p {
   background: linear-gradient(135deg, rgba(18, 40, 30, 0.98), rgba(99, 53, 45, 0.96));
 }
 
+.dashboard-section-title {
+  align-items: flex-end;
+  border-top: 1px solid rgba(18, 40, 30, 0.08);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 18px;
+}
+
+.dashboard-section-title .eyebrow {
+  margin-bottom: 0;
+}
+
+.dashboard-section-title h2 {
+  color: var(--primary);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -3459,6 +3480,13 @@ td strong {
   .personal-metric small {
     font-size: 0.72rem;
     line-height: 1.25;
+  }
+
+  .dashboard-section-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 14px;
   }
 
   .toolbar-band {
