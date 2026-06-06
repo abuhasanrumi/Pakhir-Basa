@@ -2879,9 +2879,6 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
                   <strong>
                     {activeMembers.find((person) => person.id === deposit.memberId)?.name || deposit.memberId} paid {formatTk(deposit.amount)} on {formatDisplayDate(deposit.date)}
                   </strong>
-                  <span>
-                    {deposit.status}
-                  </span>
                   <small>{deposit.note || "Deposit"}</small>
                 </div>
                 {isAdmin ? (
