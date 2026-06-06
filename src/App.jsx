@@ -19,7 +19,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addRecord,
   auth,
@@ -1135,6 +1135,14 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
   const myLedger = member ? ledger[member.id] : null;
   const myMealStats = member ? memberMealStats[member.id] : null;
   const myBalance = Number(myLedger?.balance || 0);
+  const mealMerchantPaid = taka(
+    expenses
+      .filter((expense) => expense.status === "approved" && expense.category === "meal" && expense.payerId === "mess_cash")
+      .reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+  );
+  const mealPaymentGap = taka(Number(totals.meals || 0) - mealMerchantPaid);
+  const mealPaymentStatus = mealPaymentGap > 0 ? `${formatTk(mealPaymentGap)} left` : mealPaymentGap < 0 ? `${formatTk(Math.abs(mealPaymentGap))} extra paid` : "Fully paid";
+  const mealPaymentDetail = mealMerchantPaid > 0 ? `Paid ${formatTk(mealMerchantPaid)} · ${mealPaymentStatus}` : "No merchant payment yet";
 
   async function closeCycle() {
     const snapshot = buildCycleSnapshot({
@@ -1223,7 +1231,7 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
         <Metric
           label="Meal Cost"
           value={formatTk(totals.meals)}
-          detail={getMealRateMode(settings) === "calculated" ? "Based on bazaar and meals" : "Saved meals with their rates"}
+          detail={mealPaymentDetail}
           icon={CircleDollarSign}
         />
       </section>
@@ -2582,6 +2590,7 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
 }
 
 function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", deposits, expenses, isAdmin, member, setMessage }) {
+  const merchantSectionRef = useRef(null);
   const [form, setForm] = useState({ date: today(), memberId: member.id, amount: "", note: "Advance deposit" });
   const [merchantForm, setMerchantForm] = useState({ date: today(), amount: "" });
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -2590,6 +2599,14 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
   const merchantPayments = expenses.filter((expense) => expense.category === "meal" && expense.payerId === "mess_cash");
   const visibleMerchantPayments = isAdmin ? merchantPayments : merchantPayments.filter((expense) => expense.createdBy === member.id || expense.status === "approved");
   const showMerchantFirst = defaultAction === "merchant";
+
+  useEffect(() => {
+    if (!showMerchantFirst) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      merchantSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [showMerchantFirst]);
 
   async function submitDeposit(event) {
     event.preventDefault();
@@ -2684,7 +2701,7 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
           </form>
         </section>
 
-        <section className={showMerchantFirst ? "panel merchant-payment-panel" : "panel merchant-payment-panel muted"}>
+        <section ref={merchantSectionRef} className={showMerchantFirst ? "panel merchant-payment-panel" : "panel merchant-payment-panel muted"}>
           <div className="section-heading">
             <h2>Paid to merchant</h2>
             <p>Use this when mess cash is paid for meals. It reduces cash and counts as meal cost.</p>
