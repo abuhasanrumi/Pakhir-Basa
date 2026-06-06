@@ -1177,8 +1177,7 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
       ) : null}
 
       <div className="dashboard-section-title">
-        <span className="eyebrow">Mess summary</span>
-        <h2>Everyone’s month at a glance</h2>
+        <span>Mess summary</span>
       </div>
 
       <section className="metrics">
