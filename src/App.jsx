@@ -368,40 +368,6 @@ export function App() {
   const readOnlyMode = Boolean(member) && (!isOnline || !editingDataReady);
 
   useEffect(() => {
-    identifyAnalyticsUser(member, {
-      messCount: memberships.length,
-      hasOpenCycle: Boolean(currentCycle),
-      mealRateMode: settings.mealRateMode,
-    });
-  }, [currentCycle?.id, member?.id, member?.role, memberships.length, settings.mealRateMode]);
-
-  useEffect(() => {
-    if (!user) {
-      trackPageView("login");
-      return;
-    }
-    if (!member) {
-      trackPageView("mess_setup", { has_invite: Boolean(inviteToken) });
-      return;
-    }
-    trackPageView(activeView, {
-      role: member.role,
-      has_open_cycle: Boolean(currentCycle),
-      meal_rate_mode: settings.mealRateMode,
-      read_only: readOnlyMode,
-      pending_count: pendingCount,
-    });
-  }, [activeView, currentCycle?.id, inviteToken, member?.id, member?.role, pendingCount, readOnlyMode, settings.mealRateMode, user?.uid]);
-
-  useEffect(() => {
-    if (serverDataReady) trackEvent("server_data_ready", { has_open_cycle: Boolean(currentCycle), meal_rate_mode: settings.mealRateMode });
-  }, [currentCycle?.id, serverDataReady, settings.mealRateMode]);
-
-  useEffect(() => {
-    if (readOnlyMode) trackEvent("read_only_mode_enabled", { is_online: isOnline, has_open_cycle: Boolean(currentCycle) });
-  }, [currentCycle?.id, isOnline, readOnlyMode]);
-
-  useEffect(() => {
     setSyncGateExpired(false);
     if (!member || !isOnline || serverDataReady) return undefined;
     const timeoutId = window.setTimeout(() => {
@@ -469,6 +435,40 @@ export function App() {
       deposits.filter((d) => d.status === "pending").length,
     [dailyMeals, expenses, deposits, isCalculatedMonth],
   );
+
+  useEffect(() => {
+    identifyAnalyticsUser(member, {
+      messCount: memberships.length,
+      hasOpenCycle: Boolean(currentCycle),
+      mealRateMode: settings.mealRateMode,
+    });
+  }, [currentCycle?.id, member?.id, member?.role, memberships.length, settings.mealRateMode]);
+
+  useEffect(() => {
+    if (!user) {
+      trackPageView("login");
+      return;
+    }
+    if (!member) {
+      trackPageView("mess_setup", { has_invite: Boolean(inviteToken) });
+      return;
+    }
+    trackPageView(activeView, {
+      role: member.role,
+      has_open_cycle: Boolean(currentCycle),
+      meal_rate_mode: settings.mealRateMode,
+      read_only: readOnlyMode,
+      pending_count: pendingCount,
+    });
+  }, [activeView, currentCycle?.id, inviteToken, member?.id, member?.role, pendingCount, readOnlyMode, settings.mealRateMode, user?.uid]);
+
+  useEffect(() => {
+    if (serverDataReady) trackEvent("server_data_ready", { has_open_cycle: Boolean(currentCycle), meal_rate_mode: settings.mealRateMode });
+  }, [currentCycle?.id, serverDataReady, settings.mealRateMode]);
+
+  useEffect(() => {
+    if (readOnlyMode) trackEvent("read_only_mode_enabled", { is_online: isOnline, has_open_cycle: Boolean(currentCycle) });
+  }, [currentCycle?.id, isOnline, readOnlyMode]);
 
   const totals = useMemo(() => {
     const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
