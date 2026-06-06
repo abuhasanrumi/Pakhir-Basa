@@ -79,6 +79,8 @@ VITE_FIREBASE_PROJECT_ID=your-project-id
 VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
 VITE_FIREBASE_APP_ID=your-app-id
+VITE_FIREBASE_MEASUREMENT_ID=your-ga4-measurement-id
+VITE_ENABLE_ANALYTICS=true
 VITE_USE_FIRESTORE_EMULATOR=false
 ```
 
@@ -128,6 +130,25 @@ firebase emulators:start --only firestore
 ```
 
 Keep `VITE_USE_FIRESTORE_EMULATOR=false` for production.
+
+## Analytics
+
+The app uses Firebase Analytics / GA4 when analytics is enabled and a Firebase measurement id is present.
+
+Add these values to `.env`:
+
+```bash
+VITE_FIREBASE_MEASUREMENT_ID=your-ga4-measurement-id
+VITE_ENABLE_ANALYTICS=true
+```
+
+To disable analytics locally or in any environment:
+
+```bash
+VITE_ENABLE_ANALYTICS=false
+```
+
+Tracked events include page views, sign in, mess creation/joining, invite creation, month creation/closing, meal sheet actions, deposits, expenses, member management, offline/read-only mode, service worker registration, and PWA install events. The app does not send Gmail addresses or meal/member names to Analytics.
 
 ## Build
 
