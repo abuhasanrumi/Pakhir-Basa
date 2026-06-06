@@ -37,6 +37,7 @@ import {
   signOutUser,
   updateRecord,
 } from "./firebase";
+import { identifyAnalyticsUser, trackEvent, trackFormError, trackPageView } from "./analytics";
 import { buildCycleSnapshot, calculateLedger, getCalculatedMealRate, getMealEntryRate, getMealRateMode, splitMeal, taka } from "./lib/calculations";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -95,6 +96,11 @@ async function copyToClipboard(text) {
   }
 }
 
+async function trackedSignOut() {
+  trackEvent("sign_out_clicked");
+  await signOutUser();
+}
+
 function collectionCacheName(collectionName, options = {}) {
   return [
     "collection",
@@ -112,7 +118,9 @@ function useOnlineStatus() {
 
   useEffect(() => {
     function updateOnlineStatus() {
-      setIsOnline(navigator.onLine);
+      const nextOnline = navigator.onLine;
+      setIsOnline(nextOnline);
+      trackEvent(nextOnline ? "connection_restored" : "offline_mode_entered");
     }
 
     window.addEventListener("online", updateOnlineStatus);
@@ -126,6 +134,7 @@ function useOnlineStatus() {
   function retryConnection() {
     setIsOnline(navigator.onLine);
     setRetryToken((current) => current + 1);
+    trackEvent("offline_retry_clicked", { is_online: navigator.onLine });
   }
 
   return { isOnline, retryConnection, retryToken };
@@ -267,11 +276,13 @@ export function App() {
           return;
         }
 
+        trackEvent("sign_in_completed", { provider: "google", has_invite: Boolean(inviteToken) });
         const email = nextUser.email.toLowerCase();
         const cachedSession = readLocalCache(`session:${email}`, null);
         let joinedMember = null;
         if (inviteToken) {
           joinedMember = await joinInvite({ token: inviteToken, user: nextUser });
+          trackEvent("invite_accepted", { role: joinedMember.role });
           window.history.replaceState({}, document.title, window.location.pathname);
         }
         const appMemberships = await getMemberships(email);
@@ -289,6 +300,11 @@ export function App() {
           setSelectedHistoryCycleId("");
           setMobileSidebarOpen(false);
           writeLocalCache(`session:${email}`, { currentCycle: openCycle, member: appMember, memberships: nextMemberships, mess });
+          trackEvent("mess_session_loaded", {
+            role: appMember.role,
+            mess_count: nextMemberships.length,
+            has_open_cycle: Boolean(openCycle),
+          });
         } else if (!navigator.onLine && cachedSession?.member?.active) {
           setMemberships(cachedSession.memberships || [cachedSession.member]);
           setCurrentMess(cachedSession.mess || null);
@@ -296,6 +312,7 @@ export function App() {
           setCurrentCycle(cachedSession.currentCycle || null);
           setSelectedHistoryCycleId("");
           setMobileSidebarOpen(false);
+          trackEvent("cached_session_loaded", { has_open_cycle: Boolean(cachedSession.currentCycle) });
         }
 
         setBootstrapping(false);
@@ -313,6 +330,7 @@ export function App() {
           setMessage("");
         } else {
           setMessage(error.code === "permission-denied" ? "Couldn’t open your mess yet. Please sign out and try again." : error.message);
+          trackEvent("app_bootstrap_failed", { error_code: error.code || "unknown" });
         }
         setBootstrapping(false);
       }
@@ -348,6 +366,40 @@ export function App() {
   const serverDataReady = isOnline && baseServerSynced && cycleServerSynced;
   const editingDataReady = serverDataReady || syncGateExpired;
   const readOnlyMode = Boolean(member) && (!isOnline || !editingDataReady);
+
+  useEffect(() => {
+    identifyAnalyticsUser(member, {
+      messCount: memberships.length,
+      hasOpenCycle: Boolean(currentCycle),
+      mealRateMode: settings.mealRateMode,
+    });
+  }, [currentCycle?.id, member?.id, member?.role, memberships.length, settings.mealRateMode]);
+
+  useEffect(() => {
+    if (!user) {
+      trackPageView("login");
+      return;
+    }
+    if (!member) {
+      trackPageView("mess_setup", { has_invite: Boolean(inviteToken) });
+      return;
+    }
+    trackPageView(activeView, {
+      role: member.role,
+      has_open_cycle: Boolean(currentCycle),
+      meal_rate_mode: settings.mealRateMode,
+      read_only: readOnlyMode,
+      pending_count: pendingCount,
+    });
+  }, [activeView, currentCycle?.id, inviteToken, member?.id, member?.role, pendingCount, readOnlyMode, settings.mealRateMode, user?.uid]);
+
+  useEffect(() => {
+    if (serverDataReady) trackEvent("server_data_ready", { has_open_cycle: Boolean(currentCycle), meal_rate_mode: settings.mealRateMode });
+  }, [currentCycle?.id, serverDataReady, settings.mealRateMode]);
+
+  useEffect(() => {
+    if (readOnlyMode) trackEvent("read_only_mode_enabled", { is_online: isOnline, has_open_cycle: Boolean(currentCycle) });
+  }, [currentCycle?.id, isOnline, readOnlyMode]);
 
   useEffect(() => {
     setSyncGateExpired(false);
@@ -457,14 +509,20 @@ export function App() {
     const nextMember = memberships.find((item) => item.id === memberIdToSelect);
     if (!nextMember) return;
     const mess = await getMess(nextMember.messId);
+    const openCycle = await getOpenCycle(nextMember.messId);
     const memberWithName = { ...nextMember, messName: mess?.name || nextMember.messName || "Unnamed mess" };
     setMember(memberWithName);
     setCurrentMess(mess);
-    setCurrentCycle(await getOpenCycle(nextMember.messId));
+    setCurrentCycle(openCycle);
     setMemberships((current) => current.map((item) => item.id === memberWithName.id ? memberWithName : item));
     setActiveView("dashboard");
     setSelectedHistoryCycleId("");
     setMobileSidebarOpen(false);
+    trackEvent("mess_switched", {
+      role: memberWithName.role,
+      mess_count: memberships.length,
+      has_open_cycle: Boolean(openCycle),
+    });
   }
 
   if (!hasFirebaseConfig) return <SetupScreen />;
@@ -566,7 +624,7 @@ export function App() {
             <strong>{member.name}</strong>
             <span>{member.role}</span>
           </div>
-          <button className="icon-button" title="Sign out" onClick={signOutUser}>
+          <button className="icon-button" title="Sign out" onClick={trackedSignOut}>
             <LogOut size={18} />
           </button>
         </div>
@@ -664,7 +722,7 @@ function SetupError({ message }) {
       <Shield size={42} />
       <h1>Setup needs attention</h1>
       <p>{message}</p>
-      <button className="secondary" onClick={signOutUser}>
+      <button className="secondary" onClick={trackedSignOut}>
         Sign out
       </button>
     </div>
@@ -708,6 +766,16 @@ function MessSwitcher({ currentMemberId, currentMess, memberships, onSwitchMess 
 }
 
 function LoginScreen() {
+  async function handleSignIn() {
+    trackEvent("sign_in_clicked", { provider: "google" });
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      trackEvent("sign_in_failed", { provider: "google", error_code: error.code || "unknown" });
+      console.error("Sign in failed", error);
+    }
+  }
+
   return (
     <div className="login-screen">
       <section className="login-hero">
@@ -721,7 +789,7 @@ function LoginScreen() {
         <Soup size={36} />
         <h2>Come on in</h2>
         <p>Sign in with Google to open your mess account.</p>
-        <button className="primary" onClick={signInWithGoogle}>
+        <button className="primary" onClick={handleSignIn}>
           Continue with Google
         </button>
       </section>
@@ -743,7 +811,9 @@ function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setM
       setMember(createdMember);
       setMemberships([createdMember]);
       setMessage("Mess created. You’re the admin for this mess.");
+      trackEvent("mess_created", { source: inviteToken ? "invite_screen" : "setup_screen" });
     } catch (error) {
+      trackEvent("mess_create_failed", { error_code: error.code || "unknown" });
       setMessage(error.message);
     } finally {
       setCreating(false);
@@ -761,7 +831,9 @@ function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setM
       setMemberships([joinedMember]);
       window.history.replaceState({}, document.title, window.location.pathname);
       setMessage(`Joined ${mess?.name || "mess"}.`);
+      trackEvent("invite_joined_from_setup", { role: joinedMember.role });
     } catch (error) {
+      trackEvent("invite_join_failed", { error_code: error.code || "unknown" });
       setMessage(error.message);
     } finally {
       setJoining(false);
@@ -797,7 +869,7 @@ function MessSetupScreen({ inviteToken, message, setCurrentMess, setMember, setM
             <Plus size={18} /> {creating ? "Creating..." : "Start a new mess"}
           </button>
         </form>
-        <button className="secondary" type="button" onClick={signOutUser}>
+        <button className="secondary" type="button" onClick={trackedSignOut}>
           Sign out
         </button>
       </div>
@@ -867,7 +939,10 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
 
   async function startCycle(event) {
     event.preventDefault();
-    if (!form.memberIds.length) return setMessage("Pick at least one person for this month.");
+    if (!form.memberIds.length) {
+      trackFormError("start_cycle", "no_members");
+      return setMessage("Pick at least one person for this month.");
+    }
     const activeMessId = currentMess?.id || member.messId;
     const cycle = {
       messId: activeMessId,
@@ -896,6 +971,11 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
     setSelectedHistoryCycleId(createdCycle.id);
     setMobileSidebarOpen(false);
     setMessage("New month started.");
+    trackEvent("cycle_created", {
+      meal_rate_mode: cycle.mealRateMode,
+      member_count: cycle.memberIds.length,
+      meal_rate: cycle.mealRate,
+    });
   }
 
   return (
@@ -938,7 +1018,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
             <strong>{member.name}</strong>
             <span>{member.role}</span>
           </div>
-          <button className="icon-button" title="Sign out" onClick={signOutUser}>
+          <button className="icon-button" title="Sign out" onClick={trackedSignOut}>
             <LogOut size={18} />
           </button>
         </div>
@@ -1065,6 +1145,12 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
     setCurrentCycle(null);
     setConfirmClose(false);
     setMessage("Month closed. You can start the next one whenever you’re ready.");
+    trackEvent("cycle_closed", {
+      meal_rate_mode: getMealRateMode(settings),
+      member_count: activeMembers.length,
+      meal_count: totals.boxes,
+      pending_count: pendingCount,
+    });
   }
 
   return (
@@ -1148,7 +1234,10 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
             <h2>Close this month</h2>
             <p>This locks the month and saves the final balances for everyone.</p>
           </div>
-          <button className="danger close-cycle-button" onClick={() => setConfirmClose(true)}>
+          <button className="danger close-cycle-button" onClick={() => {
+            setConfirmClose(true);
+            trackEvent("close_cycle_modal_opened", { meal_rate_mode: getMealRateMode(settings), pending_count: pendingCount });
+          }}>
             Close month
           </button>
         </section>
@@ -1293,6 +1382,10 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
   function openDateDetails(date) {
     setSelectedDate(date);
     setDetailDate(date);
+    trackEvent("meal_calendar_date_opened", {
+      has_meals: Boolean(mealsByDate[date]?.length),
+      entry_count: mealsByDate[date]?.length || 0,
+    });
   }
 
   return (
@@ -1560,12 +1653,13 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     setter(next);
   }
 
-  function toggleUnavailable(setUnavailable, setPortions, memberId) {
+  function toggleUnavailable(setUnavailable, setPortions, memberId, session) {
     setUnavailable((current) => {
       const next = { ...current, [memberId]: !current[memberId] };
       if (next[memberId]) {
         setPortions((portionsNow) => ({ ...portionsNow, [memberId]: 0 }));
       }
+      trackEvent(next[memberId] ? "meal_member_temporarily_removed" : "meal_member_restored", { session });
       return next;
     });
   }
@@ -1617,6 +1711,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     if (!existingDailyMeal) return;
     await updateRecord("dailyMeals", existingDailyMeal.id, { status: "approved" });
     setMessage(`Daily meal sheet approved for ${date}.`);
+    trackEvent("meal_approved", {
+      had_lunch: Boolean(existingDailyMeal.lunch?.eaters?.length),
+      had_dinner: Boolean(existingDailyMeal.dinner?.eaters?.length),
+    });
   }
 
   async function submitDailySheet(event) {
@@ -1626,6 +1724,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     if (isDateBeforeCycle) {
       setIsEditingDay(true);
       setMealFormError(`This date is before the month started on ${cycleStartDate}.`);
+      trackFormError("daily_meal_sheet", "date_before_cycle");
       return;
     }
 
@@ -1637,6 +1736,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     if (!lunchSkipped && !lunchEaters.length && !dinnerSkipped && !dinnerEaters.length) {
       setIsEditingDay(true);
       setMealFormError("Add lunch or dinner for at least one person.");
+      trackFormError("daily_meal_sheet", "no_eaters");
       return;
     }
 
@@ -1644,12 +1744,14 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       if ((!lunchSkipped && lunchEaters.length && Number(lunchOrdered) <= 0) || (!dinnerSkipped && dinnerEaters.length && Number(dinnerOrdered) <= 0)) {
         setIsEditingDay(true);
         setMealFormError("Add an ordered meal count, or mark that meal as skipped.");
+        trackFormError("daily_meal_sheet", "missing_ordered_count");
         return;
       }
 
       if ((!lunchSkipped && lunchEaters.length && Math.abs(Number(lunchOrdered) - lunchDemandTotal) > 0.01) || (!dinnerSkipped && dinnerEaters.length && Math.abs(Number(dinnerOrdered) - dinnerDemandTotal) > 0.01)) {
         setIsEditingDay(true);
         setMealFormError("Ordered meals should match everyone’s portions before saving.");
+        trackFormError("daily_meal_sheet", "ordered_count_mismatch");
         return;
       }
     }
@@ -1684,9 +1786,20 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
           ? `Daily meal sheet ${existingDailyMeal ? "updated" : "saved"} for ${date}.`
           : "Meal saved. An admin will review it."
       );
+      trackEvent(existingDailyMeal ? "meal_sheet_updated" : "meal_sheet_created", {
+        status: payload.status,
+        meal_rate_mode: payload.rateMode,
+        lunch_skipped: lunchSkipped,
+        dinner_skipped: dinnerSkipped,
+        lunch_eaters: lunchEaters.length,
+        dinner_eaters: dinnerEaters.length,
+        lunch_meals: lunchDemandTotal,
+        dinner_meals: dinnerDemandTotal,
+      });
     } catch (error) {
       console.error("Daily meal save failed", error);
       setMessage(error.code === "permission-denied" ? "Couldn’t save this meal. Please refresh and try again." : error.message);
+      trackEvent("meal_sheet_save_failed", { error_code: error.code || "unknown" });
     } finally {
       setIsSaving(false);
     }
@@ -1712,7 +1825,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
             <strong>No meal added for {selectedDayLabel}</strong>
             <p>Lunch and dinner are empty for this date.</p>
           </div>
-          <button className="primary" disabled={isDateBeforeCycle} type="button" onClick={() => setIsEditingDay(true)}>
+          <button className="primary" disabled={isDateBeforeCycle} type="button" onClick={() => {
+            setIsEditingDay(true);
+            trackEvent("meal_sheet_add_clicked", { selected_day: selectedDayLabel });
+          }}>
             <Plus size={18} /> Add meal
           </button>
         </div>
@@ -1792,7 +1908,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               adjustPortion={adjustPortion}
               setAllPortions={setAllPortions}
               setEvenSplit={setEvenSplit}
-              toggleUnavailable={(memberId) => toggleUnavailable(setLunchUnavailable, setLunchPortions, memberId)}
+              toggleUnavailable={(memberId) => toggleUnavailable(setLunchUnavailable, setLunchPortions, memberId, "lunch")}
             />
             <MealSessionEditor
               activeMembers={editableMembers}
@@ -1817,7 +1933,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               adjustPortion={adjustPortion}
               setAllPortions={setAllPortions}
               setEvenSplit={setEvenSplit}
-              toggleUnavailable={(memberId) => toggleUnavailable(setDinnerUnavailable, setDinnerPortions, memberId)}
+              toggleUnavailable={(memberId) => toggleUnavailable(setDinnerUnavailable, setDinnerPortions, memberId, "dinner")}
             />
           </div>
           {mealFormError ? <div className="meal-form-error">{mealFormError}</div> : null}
@@ -1828,7 +1944,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               </button>
             ) : null}
             {existingDailyMeal && !canEditSheet && canEditExisting ? (
-              <button className="secondary" type="button" onClick={() => setIsEditingDay(true)}>
+              <button className="secondary" type="button" onClick={() => {
+                setIsEditingDay(true);
+                trackEvent("meal_sheet_edit_clicked", { status: existingDailyMeal.status });
+              }}>
                 <Pencil size={18} /> Edit
               </button>
             ) : null}
@@ -1880,6 +1999,22 @@ function MealSessionEditor({
   const estimatedTotal = skipped ? 0 : taka(sessionCount * (Number(rate) || 0));
   const activeCount = skipped ? 0 : Object.values(portions).filter((value) => Number(value) > 0).length;
   const sessionClass = label.toLowerCase();
+  const sessionName = sessionClass;
+
+  function chooseOrderedMealCount(count, source = "chip") {
+    setOrdered(count);
+    trackEvent("ordered_meal_count_selected", { session: sessionName, source, count: Number(count || 0) });
+  }
+
+  function applyPortionPreset(action, callback) {
+    callback();
+    trackEvent("meal_portion_preset_used", {
+      session: sessionName,
+      action,
+      available_member_count: availableMembers.length,
+      ordered_meals: Number(ordered || 0),
+    });
+  }
 
   return (
     <section className={`meal-session-box meal-session-box--${sessionClass}${disabled ? " readonly" : skipped ? " skipped" : ""}`}>
@@ -1902,7 +2037,7 @@ function MealSessionEditor({
                     disabled={portionControlsDisabled}
                     key={count}
                     type="button"
-                    onClick={() => setOrdered(count)}
+                    onClick={() => chooseOrderedMealCount(count)}
                   >
                     {count}
                   </button>
@@ -1910,7 +2045,7 @@ function MealSessionEditor({
                 <button
                   disabled={portionControlsDisabled}
                   type="button"
-                  onClick={() => setOrdered(taka((Number(ordered) || 0) + 1))}
+                  onClick={() => chooseOrderedMealCount(taka((Number(ordered) || 0) + 1), "more")}
                 >
                   More
                 </button>
@@ -1930,6 +2065,7 @@ function MealSessionEditor({
                         if (event.key === "Enter") {
                           event.preventDefault();
                           setEditingRate(false);
+                          trackEvent("meal_rate_confirmed", { session: sessionName, source: "enter" });
                         }
                       }}
                     />
@@ -1945,12 +2081,16 @@ function MealSessionEditor({
                         event.preventDefault();
                         event.stopPropagation();
                         setEditingRate(false);
+                        trackEvent("meal_rate_confirmed", { session: sessionName, source: "button" });
                       }}
                     >
                       <Check size={13} />
                     </button>
                   ) : (
-                    <button disabled={rateDisabled} type="button" title="Edit rate" onClick={() => setEditingRate(true)}>
+                    <button disabled={rateDisabled} type="button" title="Edit rate" onClick={() => {
+                      setEditingRate(true);
+                      trackEvent("meal_rate_edit_started", { session: sessionName });
+                    }}>
                       <Pencil size={13} />
                     </button>
                   )}
@@ -1961,6 +2101,7 @@ function MealSessionEditor({
                     onClick={() => {
                       setRate(defaultRate || 70);
                       setEditingRate(false);
+                      trackEvent("meal_rate_reset", { session: sessionName });
                     }}
                   >
                     <RotateCcw size={13} />
@@ -1974,9 +2115,9 @@ function MealSessionEditor({
 
       {allowCountEdit ? (
         <div className="meal-quick-actions">
-          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setAllPortions(setPortions, 1, availableMembers)}>All 1</button>
-          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setEvenSplit(setPortions, ordered, availableMembers)}>Split evenly</button>
-          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0, availableMembers)}>Clear</button>
+          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => applyPortionPreset("all_1", () => setAllPortions(setPortions, 1, availableMembers))}>All 1</button>
+          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => applyPortionPreset("split_evenly", () => setEvenSplit(setPortions, ordered, availableMembers))}>Split evenly</button>
+          <button disabled={portionControlsDisabled} type="button" onClick={() => applyPortionPreset("clear", () => setAllPortions(setPortions, 0, availableMembers))}>Clear</button>
         </div>
       ) : null}
 
@@ -2030,7 +2171,10 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
 
   async function submitExpense(event) {
     event.preventDefault();
-    if (Number(form.amount) <= 0) return setMessage("Add the amount first.");
+    if (Number(form.amount) <= 0) {
+      trackFormError("expense", "missing_amount");
+      return setMessage("Add the amount first.");
+    }
     await addRecord("expenses", {
       messId: currentCycle.messId,
       cycleId: currentCycle.id,
@@ -2048,6 +2192,11 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
     });
     setForm({ ...emptyExpense, date: form.date });
     setMessage(isAdmin ? "Expense added." : "Expense saved. An admin will review it.");
+    trackEvent("expense_created", {
+      status: isAdmin ? "approved" : "pending",
+      category: form.category,
+      amount: Number(form.amount),
+    });
   }
 
   return (
@@ -2102,11 +2251,13 @@ function EntryList({ entries, isAdmin, members, type }) {
 
   async function approve(entry) {
     await updateRecord(type, entry.id, { status: "approved" });
+    trackEvent(`${type === "mealEntries" ? "meal_entry" : "expense"}_approved`, { status: entry.status });
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return;
     await deleteRecord(type, deleteTarget.id);
+    trackEvent(`${type === "mealEntries" ? "meal_entry" : "expense"}_deleted`, { status: deleteTarget.status });
     setDeleteTarget(null);
   }
 
@@ -2214,6 +2365,7 @@ function EntryList({ entries, isAdmin, members, type }) {
         onCancel={() => setEditTarget(null)}
         onSave={async (payload) => {
           await updateRecord(type, editTarget.id, payload);
+          trackEvent(`${type === "mealEntries" ? "meal_entry" : "expense"}_edited`);
           setEditTarget(null);
         }}
         type={type}
@@ -2410,7 +2562,10 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
 
   async function submitDeposit(event) {
     event.preventDefault();
-    if (!form.memberId || Number(form.amount) <= 0) return setMessage("Choose a person and add the deposit amount.");
+    if (!form.memberId || Number(form.amount) <= 0) {
+      trackFormError("deposit", !form.memberId ? "missing_member" : "missing_amount");
+      return setMessage("Choose a person and add the deposit amount.");
+    }
     await addRecord("deposits", {
       messId: currentCycle.messId,
       cycleId: currentCycle.id,
@@ -2424,6 +2579,11 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
     });
     setForm({ ...form, amount: "", note: "Advance deposit" });
     setMessage(isAdmin ? "Deposit added." : "Deposit saved. An admin will review it.");
+    trackEvent("deposit_created", {
+      status: isAdmin ? "approved" : "pending",
+      amount: Number(form.amount),
+      own_deposit: form.memberId === member.id,
+    });
   }
 
   return (
@@ -2479,7 +2639,10 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
               {isAdmin ? (
                 <div className="row-actions">
                   {deposit.status === "pending" ? (
-                    <button className="icon-button approve" title="Approve" onClick={() => updateRecord("deposits", deposit.id, { status: "approved" })}>
+                    <button className="icon-button approve" title="Approve" onClick={async () => {
+                      await updateRecord("deposits", deposit.id, { status: "approved" });
+                      trackEvent("deposit_approved", { amount: Number(deposit.amount || 0) });
+                    }}>
                       <Check size={17} />
                     </button>
                   ) : null}
@@ -2499,6 +2662,7 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
           await deleteRecord("deposits", deleteTarget.id);
+          trackEvent("deposit_deleted", { status: deleteTarget.status, amount: Number(deleteTarget.amount || 0) });
           setDeleteTarget(null);
         }}
         open={Boolean(deleteTarget)}
@@ -2533,9 +2697,11 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
       const copied = await copyToClipboard(link);
       setInviteCopied(copied);
       setMessage(copied ? "Invite link is ready and copied." : "Invite link is ready. Copy it below.");
+      trackEvent("invite_created", { role: form.role, copied });
     } catch (error) {
       console.error("Invite creation failed", error);
       setMessage(error.code === "permission-denied" ? "Couldn’t make the invite link. Please refresh and try again." : error.message);
+      trackEvent("invite_create_failed", { error_code: error.code || "unknown", role: form.role });
     } finally {
       setCreatingInvite(false);
     }
@@ -2546,6 +2712,7 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
     const copied = await copyToClipboard(inviteLink);
     setInviteCopied(copied);
     setMessage(copied ? "Invite link copied." : "Couldn’t auto-copy. Select the link and copy it manually.");
+    trackEvent("invite_copied", { copied });
   }
 
   async function addMemberToCycle(memberId) {
@@ -2554,12 +2721,14 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
     setCurrentCycle({ ...currentCycle, memberIds: nextMemberIds });
     setCycleMemberToAdd("");
     setMessage("Person added to this month.");
+    trackEvent("cycle_member_added", { member_count: nextMemberIds.length });
   }
 
   async function deleteMemberFromWorkspace() {
     if (!deleteTarget) return;
     if (deleteTarget.role === "admin") {
       setDeleteTarget(null);
+      trackFormError("delete_member", "admin_locked");
       return setMessage("Admins can’t be deleted. Change their role first.");
     }
 
@@ -2572,20 +2741,25 @@ function Members({ currentCycle, currentMess, cycleMembers, member, members, set
     await deleteRecord("members", deleteTarget.id);
     setDeleteTarget(null);
     setMessage("Person removed from this mess.");
+    trackEvent("member_deleted", { was_in_current_cycle: includedIds.includes(deleteTarget.id) });
   }
 
   async function changeMemberRole(person, role) {
     if (person.role === "admin" && role !== "admin" && activeAdminCount <= 1) {
+      trackFormError("member_role", "last_admin");
       return setMessage("Keep at least one active admin.");
     }
     await updateRecord("members", person.id, { role });
+    trackEvent("member_role_changed", { from_role: person.role, to_role: role });
   }
 
   async function toggleMemberActive(person) {
     if (person.active && person.role === "admin" && activeAdminCount <= 1) {
+      trackFormError("member_active_toggle", "last_admin");
       return setMessage("Keep at least one active admin.");
     }
     await updateRecord("members", person.id, { active: !person.active });
+    trackEvent(person.active ? "member_deactivated" : "member_activated", { role: person.role });
   }
 
   return (
@@ -2714,6 +2888,7 @@ function MemberNameEditor({ person, setMessage }) {
     if (!nextName || nextName === person.name) return;
     await updateRecord("members", person.id, { name: nextName });
     setMessage("Name updated.");
+    trackEvent("member_name_updated", { own_profile: false });
   }
 
   return (
