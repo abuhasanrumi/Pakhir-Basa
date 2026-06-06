@@ -499,6 +499,84 @@ p {
 }
 
 /* Metric / Stat Cards Grid */
+.personal-metrics {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.personal-metric {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(18, 40, 30, 0.98), rgba(31, 66, 50, 0.96));
+  border: 1px solid rgba(216, 175, 84, 0.24);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 20px 50px -34px rgba(18, 40, 30, 0.65);
+  color: #ffffff;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 150px;
+  padding: 26px;
+  position: relative;
+  overflow: hidden;
+}
+
+.personal-metric::after {
+  background: rgba(216, 175, 84, 0.18);
+  border-radius: 999px;
+  content: "";
+  height: 120px;
+  position: absolute;
+  right: -48px;
+  top: -58px;
+  width: 120px;
+}
+
+.personal-metric svg {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--border-radius-md);
+  color: var(--accent);
+  height: 50px;
+  padding: 12px;
+  width: 50px;
+}
+
+.personal-metric span,
+.personal-metric small {
+  color: rgba(255, 255, 255, 0.72);
+  display: block;
+  font-weight: 700;
+}
+
+.personal-metric span {
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.personal-metric strong {
+  color: #ffffff;
+  display: block;
+  font-size: 2.4rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.personal-metric small {
+  font-size: 0.88rem;
+  margin-top: 10px;
+}
+
+.personal-metric.credit {
+  background: linear-gradient(135deg, rgba(18, 40, 30, 0.98), rgba(33, 82, 61, 0.96));
+}
+
+.personal-metric.due {
+  background: linear-gradient(135deg, rgba(18, 40, 30, 0.98), rgba(99, 53, 45, 0.96));
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -811,6 +889,29 @@ select:disabled {
   gap: 20px;
 }
 
+.member-summary {
+  background:
+    linear-gradient(180deg, rgba(247, 253, 249, 0.94), rgba(237, 249, 243, 0.9)),
+    linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(18, 40, 30, 0.06));
+  border-color: rgba(22, 101, 52, 0.12);
+}
+
+.meal-calendar-panel {
+  background:
+    linear-gradient(180deg, rgba(247, 252, 255, 0.94), rgba(237, 247, 253, 0.9)),
+    linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(18, 40, 30, 0.045));
+  border-color: rgba(14, 116, 144, 0.12);
+}
+
+.member-summary .section-heading,
+.meal-calendar-panel .section-heading {
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(18, 40, 30, 0.05);
+  border-radius: var(--border-radius-md);
+  margin: -6px -6px 0;
+  padding: 18px;
+}
+
 .summary-note {
   display: flex;
   flex-wrap: wrap;
@@ -875,11 +976,14 @@ select:disabled {
 }
 
 .member-summary .table-wrap {
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(22, 101, 52, 0.07);
   border-radius: calc(var(--border-radius-lg) - 2px);
   max-width: 100%;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  padding: 10px;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -1239,6 +1343,13 @@ select:focus {
   justify-content: space-between;
 }
 
+.meal-heading-meta {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .status-badge {
   border-radius: 99px;
   font-size: 0.76rem;
@@ -1258,6 +1369,19 @@ select:focus {
   background: var(--warning-bg);
   border: 1px solid var(--warning-border);
   color: #92400e;
+}
+
+.submitted-by-chip {
+  background: rgba(18, 40, 30, 0.04);
+  border: 1px solid rgba(18, 40, 30, 0.07);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.2;
+  padding: 7px 10px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .form-actions {
@@ -1337,7 +1461,6 @@ select:focus {
 }
 
 .meal-session-box {
-  background: linear-gradient(180deg, rgba(18, 40, 30, 0.025), rgba(18, 40, 30, 0.01));
   border: 1px solid rgba(18, 40, 30, 0.08);
   border-radius: var(--border-radius-lg);
   display: grid;
@@ -1345,13 +1468,27 @@ select:focus {
   padding: 20px;
 }
 
+.meal-session-box--lunch {
+  background:
+    linear-gradient(180deg, rgba(248, 253, 250, 0.96), rgba(238, 249, 243, 0.92)),
+    linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(18, 40, 30, 0.045));
+  border-color: rgba(22, 101, 52, 0.12);
+}
+
+.meal-session-box--dinner {
+  background:
+    linear-gradient(180deg, rgba(247, 252, 255, 0.96), rgba(237, 247, 253, 0.92)),
+    linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(18, 40, 30, 0.04));
+  border-color: rgba(14, 116, 144, 0.12);
+}
+
 .meal-session-box.readonly {
-  background: rgba(18, 40, 30, 0.018);
+  filter: saturate(0.86);
 }
 
 .meal-session-box.skipped {
-  background: rgba(18, 40, 30, 0.018);
   border-style: dashed;
+  filter: saturate(0.82);
 }
 
 .meal-session-header {
@@ -1547,12 +1684,76 @@ select:focus {
   box-shadow: 0 6px 16px rgba(18, 40, 30, 0.04);
 }
 
-.meal-member-row > span {
+.meal-member-row.unavailable {
+  background: rgba(18, 40, 30, 0.025);
+  border-color: rgba(18, 40, 30, 0.08);
+}
+
+.meal-member-row.unavailable .portion-controls {
+  opacity: 0.45;
+}
+
+.meal-member-row__top {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.meal-member-row__top > span {
   display: block;
   font-weight: 650;
   line-height: 1.2;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.meal-member-row__top small {
+  background: rgba(18, 40, 30, 0.06);
+  border: 1px solid rgba(18, 40, 30, 0.08);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 750;
+  grid-column: 1 / -1;
+  justify-self: start;
+  line-height: 1;
+  padding: 6px 9px;
+}
+
+.availability-toggle {
+  align-items: center;
+  background: rgba(190, 48, 48, 0.06);
+  border: 1px solid rgba(190, 48, 48, 0.18);
+  border-radius: 999px;
+  color: #be3030;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  transition: var(--transition-fast);
+  width: 30px;
+}
+
+.availability-toggle:hover:not(:disabled) {
+  background: rgba(190, 48, 48, 0.12);
+  border-color: rgba(190, 48, 48, 0.28);
+}
+
+.availability-toggle.restore {
+  background: rgba(18, 40, 30, 0.06);
+  border-color: rgba(18, 40, 30, 0.14);
+  color: var(--primary);
+}
+
+.availability-toggle.restore:hover:not(:disabled) {
+  background: rgba(18, 40, 30, 0.1);
+  border-color: rgba(18, 40, 30, 0.2);
+}
+
+.availability-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .portion-controls {
@@ -1751,6 +1952,23 @@ select:focus {
   padding-bottom: 8px;
 }
 
+.meal-calendar-panel .calendar-toolbar,
+.meal-calendar-panel .calendar-grid {
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(14, 116, 144, 0.07);
+  border-radius: calc(var(--border-radius-lg) - 2px);
+}
+
+.meal-calendar-panel .calendar-toolbar {
+  padding: 12px;
+}
+
+.meal-calendar-panel .calendar-grid {
+  padding-bottom: 14px;
+  padding-left: 14px;
+  padding-top: 14px;
+}
+
 .calendar-grid > strong {
   color: var(--text-muted);
   font-size: 0.78rem;
@@ -1826,6 +2044,12 @@ select:focus {
   color: var(--primary);
   font-size: 1.35rem;
   letter-spacing: -0.03em;
+}
+
+.daily-meal-card__session small {
+  color: var(--text-light);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .daily-meal-card__rate {
@@ -3113,6 +3337,17 @@ td strong {
     justify-content: flex-start;
   }
 
+  .meal-heading-row,
+  .meal-heading-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .submitted-by-chip {
+    text-align: left;
+    white-space: normal;
+  }
+
   .member-summary__heading,
   .history-item__header,
   .no-cycle-hero,
@@ -3191,6 +3426,39 @@ td strong {
   .metrics {
     gap: 12px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .personal-metrics {
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .personal-metric {
+    align-items: start;
+    gap: 12px;
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 16px 12px;
+  }
+
+  .personal-metric svg {
+    height: 38px;
+    padding: 8px;
+    width: 38px;
+  }
+
+  .personal-metric span {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+
+  .personal-metric strong {
+    font-size: 1.45rem;
+  }
+
+  .personal-metric small {
+    font-size: 0.72rem;
+    line-height: 1.25;
   }
 
   .toolbar-band {

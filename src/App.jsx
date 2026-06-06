@@ -151,6 +151,8 @@ function flattenDailyMeals(dailyMeals = []) {
         status: day.status || "approved",
         createdBy: day.createdBy,
         createdByName: day.createdByName,
+        submittedBy: day.submittedBy || day.createdBy,
+        submittedByName: day.submittedByName || day.createdByName,
       }];
     }),
   );
@@ -603,6 +605,7 @@ export function App() {
             isAdmin={isAdmin}
             ledger={ledger}
             mealEntries={mealEntries}
+            member={member}
             members={members}
             pendingCount={pendingCount}
             setActiveView={setActiveView}
@@ -1030,12 +1033,15 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
   );
 }
 
-function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
+function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today());
   const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
   const memberMealStats = useMemo(() => buildMemberMealStats({ members: activeMembers, mealEntries: approvedMeals, settings, activeRate: totals.mealRate }), [activeMembers, approvedMeals, settings, totals.mealRate]);
   const mealsByDate = useMemo(() => groupMealsByDate(approvedMeals), [approvedMeals]);
+  const myLedger = member ? ledger[member.id] : null;
+  const myMealStats = member ? memberMealStats[member.id] : null;
+  const myBalance = Number(myLedger?.balance || 0);
 
   async function closeCycle() {
     const snapshot = buildCycleSnapshot({
@@ -1063,6 +1069,27 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
 
   return (
     <div className="stack">
+      {member ? (
+        <section className="personal-metrics" aria-label="Your meal and balance summary">
+          <article className="personal-metric">
+            <CalendarCheck size={22} />
+            <div>
+              <span>My meals</span>
+              <strong>{Number(myMealStats?.meals || 0).toFixed(1)} meals</strong>
+              <small>This month so far</small>
+            </div>
+          </article>
+          <article className={myBalance < 0 ? "personal-metric due" : "personal-metric credit"}>
+            <Wallet size={22} />
+            <div>
+              <span>My balance</span>
+              <strong>{formatTk(Math.abs(myBalance))}</strong>
+              <small>{myBalance < 0 ? "You need to pay" : "You have balance"}</small>
+            </div>
+          </article>
+        </section>
+      ) : null}
+
       <section className="metrics">
         <Metric
           label="Mess Cash"
@@ -1269,7 +1296,7 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
   }
 
   return (
-    <section className="panel">
+    <section className="panel meal-calendar-panel">
       <div className="section-heading">
         <h2>Meal calendar</h2>
         <p>Tap a date to see what happened that day.</p>
@@ -1319,6 +1346,7 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
                       <div className="daily-meal-card__session">
                         <span>{entry.session}</span>
                         <strong>{entry.boxCount} ordered</strong>
+                        <small>Submitted by {entry.submittedByName || entry.createdByName || "Admin"}</small>
                       </div>
                       <div className="daily-meal-card__rate">
                         <span>{formatTk(rate)} rate</span>
@@ -1365,10 +1393,12 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
   const [lunchRate, setLunchRate] = useState(settings.mealRate || 70);
   const [lunchOrdered, setLunchOrdered] = useState(0);
   const [lunchPortions, setLunchPortions] = useState({});
+  const [lunchUnavailable, setLunchUnavailable] = useState({});
   const [lunchSkipped, setLunchSkipped] = useState(false);
   const [dinnerRate, setDinnerRate] = useState(settings.mealRate || 70);
   const [dinnerOrdered, setDinnerOrdered] = useState(0);
   const [dinnerPortions, setDinnerPortions] = useState({});
+  const [dinnerUnavailable, setDinnerUnavailable] = useState({});
   const [dinnerSkipped, setDinnerSkipped] = useState(false);
   const [editingRates, setEditingRates] = useState({ lunch: false, dinner: false });
   const [isEditingDay, setIsEditingDay] = useState(false);
@@ -1415,19 +1445,23 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       setLunchOrdered(getSessionBoxCount(existingDailyMeal.lunch));
       setLunchRate(existingDailyMeal.lunch?.rate || defaultRate);
       setLunchPortions(hydratePortions(existingDailyMeal.lunch?.portions));
+      setLunchUnavailable({});
       setLunchSkipped(Boolean(existingDailyMeal.lunch?.skipped));
       setDinnerOrdered(getSessionBoxCount(existingDailyMeal.dinner));
       setDinnerRate(existingDailyMeal.dinner?.rate || defaultRate);
       setDinnerPortions(hydratePortions(existingDailyMeal.dinner?.portions));
+      setDinnerUnavailable({});
       setDinnerSkipped(Boolean(existingDailyMeal.dinner?.skipped));
     } else {
       setLunchOrdered(0);
       setLunchRate(defaultRate);
       setLunchPortions(blankPortions());
+      setLunchUnavailable({});
       setLunchSkipped(false);
       setDinnerOrdered(0);
       setDinnerRate(defaultRate);
       setDinnerPortions(blankPortions());
+      setDinnerUnavailable({});
       setDinnerSkipped(false);
     }
 
@@ -1497,16 +1531,19 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     setter((current) => ({ ...current, [memberId]: Math.max(0, taka((Number(current[memberId]) || 0) + delta)) }));
   }
 
-  function setAllPortions(setter, value) {
+  function setAllPortions(setter, value, targetMembers = editableMembers) {
     const next = {};
     editableMembers.forEach((person) => {
+      next[person.id] = 0;
+    });
+    targetMembers.forEach((person) => {
       next[person.id] = value;
     });
     setter(next);
   }
 
-  function setEvenSplit(setter, total) {
-    const count = editableMembers.length;
+  function setEvenSplit(setter, total, targetMembers = editableMembers) {
+    const count = targetMembers.length;
     if (!count) {
       setter({});
       return;
@@ -1514,10 +1551,23 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
     const baseShare = count > 0 ? taka(Number(total || 0) / count) : 0;
     const next = {};
-    editableMembers.forEach((person, index) => {
+    editableMembers.forEach((person) => {
+      next[person.id] = 0;
+    });
+    targetMembers.forEach((person, index) => {
       next[person.id] = index === count - 1 ? taka(Number(total || 0) - baseShare * (count - 1)) : baseShare;
     });
     setter(next);
+  }
+
+  function toggleUnavailable(setUnavailable, setPortions, memberId) {
+    setUnavailable((current) => {
+      const next = { ...current, [memberId]: !current[memberId] };
+      if (next[memberId]) {
+        setPortions((portionsNow) => ({ ...portionsNow, [memberId]: 0 }));
+      }
+      return next;
+    });
   }
 
   function buildSession(boxCount, rate, portions, skipped) {
@@ -1552,10 +1602,12 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     setLunchOrdered(getSessionBoxCount(existingDailyMeal.lunch));
     setLunchRate(existingDailyMeal.lunch?.rate || defaultRate);
     setLunchPortions(hydratePortions(existingDailyMeal.lunch?.portions));
+    setLunchUnavailable({});
     setLunchSkipped(Boolean(existingDailyMeal.lunch?.skipped));
     setDinnerOrdered(getSessionBoxCount(existingDailyMeal.dinner));
     setDinnerRate(existingDailyMeal.dinner?.rate || defaultRate);
     setDinnerPortions(hydratePortions(existingDailyMeal.dinner?.portions));
+    setDinnerUnavailable({});
     setDinnerSkipped(Boolean(existingDailyMeal.dinner?.skipped));
     setEditingRates({ lunch: false, dinner: false });
     setIsEditingDay(false);
@@ -1613,6 +1665,9 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       status: isAdmin ? "approved" : "pending",
       createdBy: existingDailyMeal?.createdBy || member.id,
       createdByName: existingDailyMeal?.createdByName || member.name,
+      submittedBy: member.id,
+      submittedByName: member.name,
+      submittedAt: serverTimestamp(),
     };
 
     if (!existingDailyMeal) payload.createdAt = serverTimestamp();
@@ -1678,7 +1733,12 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
                   : "Add lunch and dinner, then set each person’s portion."}
               </p>
             </div>
-            {existingDailyMeal ? <span className={existingDailyMeal.status === "approved" ? "status-badge approved" : "status-badge pending"}>{existingDailyMeal.status}</span> : null}
+            {existingDailyMeal ? (
+              <div className="meal-heading-meta">
+                <span className={existingDailyMeal.status === "approved" ? "status-badge approved" : "status-badge pending"}>{existingDailyMeal.status}</span>
+                <span className="submitted-by-chip">Submitted by {existingDailyMeal.submittedByName || existingDailyMeal.createdByName || "Admin"}</span>
+              </div>
+            ) : null}
           </div>
         </div>
         <form onSubmit={submitDailySheet} className="form-grid">
@@ -1722,6 +1782,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               preview={lunchPreview}
               rate={isCalculated ? sessionRate : lunchRate}
               skipped={lunchSkipped}
+              unavailableMembers={lunchUnavailable}
               setOrdered={setLunchOrdered}
               setPortions={setLunchPortions}
               setRate={setLunchRate}
@@ -1731,6 +1792,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               adjustPortion={adjustPortion}
               setAllPortions={setAllPortions}
               setEvenSplit={setEvenSplit}
+              toggleUnavailable={(memberId) => toggleUnavailable(setLunchUnavailable, setLunchPortions, memberId)}
             />
             <MealSessionEditor
               activeMembers={editableMembers}
@@ -1745,6 +1807,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               preview={dinnerPreview}
               rate={isCalculated ? sessionRate : dinnerRate}
               skipped={dinnerSkipped}
+              unavailableMembers={dinnerUnavailable}
               setOrdered={setDinnerOrdered}
               setPortions={setDinnerPortions}
               setRate={setDinnerRate}
@@ -1754,6 +1817,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               adjustPortion={adjustPortion}
               setAllPortions={setAllPortions}
               setEvenSplit={setEvenSplit}
+              toggleUnavailable={(memberId) => toggleUnavailable(setDinnerUnavailable, setDinnerPortions, memberId)}
             />
           </div>
           {mealFormError ? <div className="meal-form-error">{mealFormError}</div> : null}
@@ -1804,17 +1868,21 @@ function MealSessionEditor({
   setRate,
   setSkipped,
   skipped,
+  toggleUnavailable,
+  unavailableMembers = {},
   updatePortion,
 }) {
   const portionControlsDisabled = disabled || skipped;
+  const availableMembers = activeMembers.filter((person) => !unavailableMembers[person.id]);
   const sessionCount = skipped ? 0 : Number(ordered) || 0;
   const rateDisabled = disabled || skipped || !allowRateEdit;
   const totalPortions = skipped ? 0 : taka(Object.values(portions).reduce((sum, value) => sum + Number(value || 0), 0));
   const estimatedTotal = skipped ? 0 : taka(sessionCount * (Number(rate) || 0));
   const activeCount = skipped ? 0 : Object.values(portions).filter((value) => Number(value) > 0).length;
+  const sessionClass = label.toLowerCase();
 
   return (
-    <section className={disabled ? "meal-session-box readonly" : skipped ? "meal-session-box skipped" : "meal-session-box"}>
+    <section className={`meal-session-box meal-session-box--${sessionClass}${disabled ? " readonly" : skipped ? " skipped" : ""}`}>
       <div className="meal-session-header">
         <div>
           <h3>{label}</h3>
@@ -1906,28 +1974,41 @@ function MealSessionEditor({
 
       {allowCountEdit ? (
         <div className="meal-quick-actions">
-          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 1)}>All 1</button>
-          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0.5)}>All 0.5</button>
-          <button disabled={portionControlsDisabled} type="button" onClick={() => setEvenSplit(setPortions, ordered)}>Split evenly</button>
-          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0)}>Clear</button>
+          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setAllPortions(setPortions, 1, availableMembers)}>All 1</button>
+          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setAllPortions(setPortions, 0.5, availableMembers)}>All 0.5</button>
+          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setEvenSplit(setPortions, ordered, availableMembers)}>Split evenly</button>
+          <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0, availableMembers)}>Clear</button>
         </div>
       ) : null}
 
       <div className="meal-member-list">
         {activeMembers.map((person) => (
-          <div className="meal-member-row" key={person.id}>
-            <span>{person.name}</span>
+          <div className={unavailableMembers[person.id] ? "meal-member-row unavailable" : "meal-member-row"} key={person.id}>
+            <div className="meal-member-row__top">
+              <span>{person.name}</span>
+              <button
+                className={unavailableMembers[person.id] ? "availability-toggle restore" : "availability-toggle"}
+                disabled={disabled || skipped}
+                aria-label={unavailableMembers[person.id] ? `Bring ${person.name} back for ${label}` : `Remove ${person.name} from ${label}`}
+                title={unavailableMembers[person.id] ? "Bring back for this meal" : "Remove for this meal"}
+                type="button"
+                onClick={() => toggleUnavailable?.(person.id)}
+              >
+                {unavailableMembers[person.id] ? <Plus size={14} /> : <X size={14} />}
+              </button>
+              {unavailableMembers[person.id] ? <small>Not eating</small> : null}
+            </div>
             <div className="portion-controls">
-              <button disabled={portionControlsDisabled} type="button" onClick={() => adjustPortion(setPortions, person.id, -0.5)}>-</button>
+              <button disabled={portionControlsDisabled || unavailableMembers[person.id]} type="button" onClick={() => adjustPortion(setPortions, person.id, -0.5)}>-</button>
               <input
-                disabled={portionControlsDisabled}
+                disabled={portionControlsDisabled || unavailableMembers[person.id]}
                 min="0"
                 step="any"
                 type="number"
                 value={portions[person.id] ?? 0}
                 onChange={(event) => updatePortion(setPortions, person.id, event.target.value)}
               />
-              <button disabled={portionControlsDisabled} type="button" onClick={() => adjustPortion(setPortions, person.id, 0.5)}>+</button>
+              <button disabled={portionControlsDisabled || unavailableMembers[person.id]} type="button" onClick={() => adjustPortion(setPortions, person.id, 0.5)}>+</button>
             </div>
           </div>
         ))}
