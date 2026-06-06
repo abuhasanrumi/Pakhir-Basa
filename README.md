@@ -96,6 +96,38 @@ Vite will print a local URL, usually:
 http://localhost:5173
 ```
 
+### Local Database Safety
+
+Local development is configured to use the Firestore Emulator through `.env.development.local`:
+
+```bash
+VITE_USE_FIRESTORE_EMULATOR=true
+VITE_FIREBASE_FIRESTORE_EMULATOR_HOST=127.0.0.1
+VITE_FIREBASE_FIRESTORE_EMULATOR_PORT=8080
+```
+
+This file is ignored by git and only applies to `npm run dev`. Production builds still use the normal Firebase project from `.env`.
+
+Start the local Firestore database in one terminal:
+
+```bash
+npm run emulators
+```
+
+Then start the app in another terminal:
+
+```bash
+npm run dev
+```
+
+The emulator UI runs at:
+
+```bash
+http://127.0.0.1:4000
+```
+
+Google sign-in still uses Firebase Auth, but all Firestore reads/writes from localhost go to the local emulator while it is running.
+
 ## Firebase Setup
 
 Create a Firebase project and enable:
@@ -115,7 +147,7 @@ firebase deploy --only firestore:rules
 
 ## Firestore Emulator
 
-To test with the local Firestore emulator, set:
+To test with the local Firestore emulator, keep these values in `.env.development.local`:
 
 ```bash
 VITE_USE_FIRESTORE_EMULATOR=true
@@ -126,7 +158,7 @@ VITE_FIREBASE_FIRESTORE_EMULATOR_PORT=8080
 Then run:
 
 ```bash
-firebase emulators:start --only firestore
+npm run emulators
 ```
 
 Keep `VITE_USE_FIRESTORE_EMULATOR=false` for production.

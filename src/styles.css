@@ -233,48 +233,294 @@ p {
   box-shadow: 0 2px 10px rgba(239, 68, 68, 0.3);
 }
 
-.mess-switcher-card {
+.mess-quick-switch {
+  align-items: center;
   background: rgba(255, 255, 255, 0.055);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--border-radius-md);
-  display: grid;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  display: flex;
   gap: 8px;
-  margin-top: 18px;
-  padding: 12px;
+  margin-top: auto;
+  padding: 9px;
 }
 
-.mess-switcher-card span {
-  color: var(--text-light);
-  font-size: 0.72rem;
-  font-weight: 800;
+.mess-quick-switch__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.mess-quick-switch__copy span {
+  color: rgba(255, 255, 255, 0.55);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 850;
   letter-spacing: 0.08em;
+  line-height: 1;
+  margin-bottom: 4px;
   text-transform: uppercase;
 }
 
-.mess-switcher-card strong {
+.mess-quick-switch__copy strong {
   color: #ffffff;
-  font-size: 0.94rem;
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mess-switcher-card select {
-  background: rgba(255, 255, 255, 0.95);
-  border: 0;
+.mess-icon-button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  font-family: var(--font-sans);
+  height: 36px;
+  justify-content: center;
+  transition: var(--transition-smooth);
+  width: 36px;
+}
+
+.mess-icon-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
+}
+
+.mess-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.mess-switch-modal {
+  gap: 16px;
+  max-width: 470px;
+}
+
+.mess-switch-modal__heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-right: 58px;
+  position: relative;
+}
+
+.mess-switch-modal__heading h2 {
+  margin-bottom: 4px;
+}
+
+.mess-switch-modal__close {
+  background: rgba(18, 40, 30, 0.05);
+  border: 1px solid rgba(18, 40, 30, 0.06);
+  border-radius: 14px;
+  color: var(--primary);
+  height: 44px;
+  min-height: 44px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 44px;
+}
+
+.mess-switch-modal__close:hover {
+  background: rgba(18, 40, 30, 0.09);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.mess-current-strip {
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.1), rgba(18, 40, 30, 0.06));
+  border: 1px solid rgba(14, 116, 144, 0.12);
+  border-radius: var(--border-radius-md);
+  display: grid;
+  gap: 3px;
+  padding: 13px 14px;
+}
+
+.mess-current-strip span {
+  color: #0e7490;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mess-current-strip strong {
+  color: var(--primary);
+  font-size: 1.02rem;
+  font-weight: 900;
+}
+
+.mess-choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mess-choice {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid rgba(18, 40, 30, 0.08);
+  border-radius: var(--border-radius-md);
+  color: var(--primary);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--font-sans);
+  gap: 12px;
+  justify-content: flex-start;
+  padding: 12px;
+  text-align: left;
+  transition: var(--transition-smooth);
+  width: 100%;
+}
+
+.mess-choice:hover:not(:disabled) {
+  background: rgba(14, 116, 144, 0.07);
+  border-color: rgba(14, 116, 144, 0.16);
+}
+
+.mess-choice.active {
+  background: rgba(18, 40, 30, 0.045);
+  border-color: rgba(18, 40, 30, 0.15);
+}
+
+.mess-choice:disabled {
+  cursor: default;
+}
+
+.mess-choice__mark {
+  align-items: center;
+  background: rgba(18, 40, 30, 0.06);
   border-radius: 10px;
   color: var(--primary);
-  font-size: 0.86rem;
+  display: flex;
+  flex: 0 0 auto;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.mess-choice.active .mess-choice__mark {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.mess-choice div {
+  flex: 1;
+  min-width: 0;
+}
+
+.mess-choice strong,
+.mess-choice div span {
+  display: block;
+}
+
+.mess-choice strong {
+  font-size: 0.98rem;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mess-choice div span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
   font-weight: 750;
-  min-height: 38px;
-  padding: 8px 10px;
+  margin-top: 2px;
+}
+
+.mess-choice small {
+  background: rgba(18, 40, 30, 0.055);
+  border-radius: 999px;
+  color: var(--primary-light);
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  font-weight: 850;
+  padding: 6px 9px;
+}
+
+.mess-choice.active small {
+  background: rgba(18, 40, 30, 0.12);
+  color: var(--primary);
+}
+
+.mess-create-inline {
+  border-top: 1px solid rgba(18, 40, 30, 0.08);
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.mess-create-wide {
+  align-items: center;
+  background: rgba(14, 116, 144, 0.06);
+  border: 1px dashed rgba(14, 116, 144, 0.22);
+  border-radius: var(--border-radius-md);
+  color: var(--primary);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--font-sans);
+  gap: 12px;
+  justify-content: flex-start;
+  padding: 13px 14px;
+  text-align: left;
+  transition: var(--transition-smooth);
   width: 100%;
+}
+
+.mess-create-wide:hover {
+  background: rgba(14, 116, 144, 0.1);
+  transform: translateY(-1px);
+}
+
+.mess-create-wide > span {
+  align-items: center;
+  background: rgba(14, 116, 144, 0.12);
+  border-radius: 10px;
+  color: #0e7490;
+  display: flex;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.mess-create-wide strong,
+.mess-create-wide small {
+  display: block;
+}
+
+.mess-create-wide strong {
+  font-size: 0.96rem;
+  font-weight: 900;
+}
+
+.mess-create-wide small {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 750;
+  margin-top: 2px;
+}
+
+.modal-error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  border-radius: var(--border-radius-md);
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 0;
+  padding: 10px 12px;
 }
 
 /* Sidebar User Profile */
 .profile {
-  margin-top: auto;
-  padding-top: 24px;
+  margin-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
@@ -1105,6 +1351,66 @@ select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 4px rgba(18, 40, 30, 0.06);
+}
+
+.pretty-date-control {
+  position: relative;
+  width: 100%;
+}
+
+.pretty-date-display {
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  padding-right: 48px;
+  pointer-events: none;
+}
+
+.pretty-date-control:has(.today-chip) .pretty-date-display {
+  padding-right: 112px;
+}
+
+.pretty-date-icon {
+  color: var(--primary-light);
+  pointer-events: none;
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.today-chip {
+  background: rgba(14, 116, 144, 0.09);
+  border: 1px solid rgba(14, 116, 144, 0.12);
+  border-radius: 999px;
+  color: #0e7490;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 10px;
+  pointer-events: none;
+  position: absolute;
+  right: 42px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.native-date-picker {
+  cursor: pointer;
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+}
+
+.native-date-picker:disabled {
+  cursor: not-allowed;
+}
+
+.pretty-date-control:has(.native-date-picker:disabled) .pretty-date-display {
+  background: rgba(18, 40, 30, 0.04);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 /* Sliding Checkbox Toggle styles */
@@ -1983,7 +2289,8 @@ select:focus {
   gap: 12px;
 }
 
-.calendar-toolbar input {
+.calendar-toolbar input,
+.calendar-toolbar .pretty-date-control {
   max-width: 220px;
 }
 
@@ -3630,7 +3937,8 @@ td strong {
     font-size: 0.8rem;
   }
 
-  .calendar-toolbar input {
+  .calendar-toolbar input,
+  .calendar-toolbar .pretty-date-control {
     max-width: none;
     width: 100%;
   }

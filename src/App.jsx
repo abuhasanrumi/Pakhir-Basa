@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { identifyAnalyticsUser, trackEvent, trackFormError, trackPageView } from "./analytics";
 import {
   addRecord,
   auth,
@@ -37,7 +38,6 @@ import {
   signOutUser,
   updateRecord,
 } from "./firebase";
-import { identifyAnalyticsUser, trackEvent, trackFormError, trackPageView } from "./analytics";
 import { buildCycleSnapshot, calculateLedger, getCalculatedMealRate, getMealEntryRate, getMealRateMode, splitMeal, taka } from "./lib/calculations";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -63,11 +63,41 @@ function formatDisplayDate(date) {
   if (!date) return "";
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return date;
-  return parsed.toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric" });
+  const day = parsed.toLocaleDateString("en", { day: "numeric" });
+  const month = parsed.toLocaleDateString("en", { month: "long" });
+  const year = parsed.toLocaleDateString("en", { year: "numeric" });
+  return `${day} ${month}, ${year}`;
+}
+
+function formatDisplayDateRange(startDate, endDate, fallback = "closing") {
+  return `${formatDisplayDate(startDate)} to ${endDate ? formatDisplayDate(endDate) : fallback}`;
+}
+
+function isTodayDate(date) {
+  return date === today();
 }
 
 function isBeforeDate(date, minDate) {
   return Boolean(date && minDate && date < minDate);
+}
+
+function DateInput({ disabled = false, label = "Date", min, onChange, showToday = false, value }) {
+  return (
+    <div className="pretty-date-control">
+      <input className="pretty-date-display" readOnly value={formatDisplayDate(value)} />
+      {showToday && isTodayDate(value) ? <span className="today-chip">Today</span> : null}
+      <CalendarCheck className="pretty-date-icon" size={18} />
+      <input
+        aria-label={label}
+        className="native-date-picker"
+        disabled={disabled}
+        min={min}
+        type="date"
+        value={value || ""}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
 }
 
 function cacheKey(name) {
@@ -250,6 +280,7 @@ export function App() {
   const [selectedHistoryCycleId, setSelectedHistoryCycleId] = useState("");
   const [activeView, setActiveView] = useState("dashboard");
   const [depositDefaultAction, setDepositDefaultAction] = useState("deposit");
+  const [depositScrollRequest, setDepositScrollRequest] = useState(0);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [syncGateExpired, setSyncGateExpired] = useState(false);
@@ -535,6 +566,21 @@ export function App() {
     });
   }
 
+  async function createAnotherMess(name) {
+    if (!user) return;
+    const { mess, member: createdMember } = await createMess({ name, user });
+    const memberWithName = { ...createdMember, messName: mess.name };
+    setMember(memberWithName);
+    setCurrentMess(mess);
+    setCurrentCycle(null);
+    setMemberships((current) => [memberWithName, ...current.filter((item) => item.id !== memberWithName.id)]);
+    setActiveView("dashboard");
+    setSelectedHistoryCycleId("");
+    setMobileSidebarOpen(false);
+    setMessage(`Created ${mess.name}. You’re the admin here.`);
+    trackEvent("mess_created_from_switcher", { mess_count: memberships.length + 1 });
+  }
+
   if (!hasFirebaseConfig) return <SetupScreen />;
   if (bootstrapping) return <Shell message="Loading household data..." />;
   if (!user) return <LoginScreen />;
@@ -566,6 +612,7 @@ export function App() {
         setMessage={setMessage}
         sidebarOpen={mobileSidebarOpen}
         memberships={memberships}
+        onCreateMess={createAnotherMess}
         onSwitchMess={switchMess}
         user={user}
         isOnline={isOnline}
@@ -614,6 +661,7 @@ export function App() {
                 className={activeView === item.id ? "nav-item active" : "nav-item"}
                 key={item.id}
                 onClick={() => {
+                  if (item.id === "deposits") setDepositDefaultAction("deposit");
                   setActiveView(item.id);
                   setMobileSidebarOpen(false);
                 }}
@@ -626,7 +674,7 @@ export function App() {
           })}
         </nav>
 
-        <MessSwitcher currentMemberId={member.id} currentMess={currentMess} memberships={memberships} onSwitchMess={switchMess} />
+        <MessSwitcher currentMemberId={member.id} currentMess={currentMess} memberships={memberships} onCreateMess={createAnotherMess} onSwitchMess={switchMess} readOnly={readOnlyMode} />
 
         <div className="profile">
           <img src={user.photoURL} alt="" />
@@ -686,6 +734,7 @@ export function App() {
             messCash={messCash}
             settings={settings}
             setDepositDefaultAction={setDepositDefaultAction}
+            setDepositScrollRequest={setDepositScrollRequest}
           />
         ) : null}
         {activeView === "meals" ? (
@@ -716,6 +765,8 @@ export function App() {
             currentCycle={currentCycle}
             deposits={deposits}
             defaultAction={depositDefaultAction}
+            merchantScrollRequest={depositScrollRequest}
+            onMerchantScrollConsumed={() => setDepositScrollRequest(0)}
             expenses={expenses}
             isAdmin={isAdmin}
             member={member}
@@ -760,20 +811,105 @@ function OfflineBanner({ isOnline, onRetry, serverDataReady }) {
   );
 }
 
-function MessSwitcher({ currentMemberId, currentMess, memberships, onSwitchMess }) {
-  if (memberships.length <= 1) return null;
+function MessSwitcher({ currentMemberId, currentMess, memberships, onCreateMess, onSwitchMess, readOnly = false }) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [messName, setMessName] = useState("My New Mess");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const currentMembership = memberships.find((item) => item.id === currentMemberId);
+
+  async function submitNewMess(event) {
+    event.preventDefault();
+    if (!onCreateMess || saving) return;
+    try {
+      setSaving(true);
+      setError("");
+      await onCreateMess(messName.trim() || "My New Mess");
+      setCreating(false);
+      setOpen(false);
+      setMessName("My New Mess");
+    } catch (createError) {
+      setError(createError.message || "Couldn’t create the mess. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <div className="mess-switcher-card">
-      <span>Current mess</span>
-      <strong>{currentMess?.name || memberships.find((item) => item.id === currentMemberId)?.messName || "This mess"}</strong>
-      <select value={currentMemberId} onChange={(event) => onSwitchMess(event.target.value)}>
-        {memberships.map((membership) => (
-          <option key={membership.id} value={membership.id}>
-            {membership.messName || "Unnamed mess"} · {membership.role}
-          </option>
-        ))}
-      </select>
+    <div className="mess-quick-switch">
+      <div className="mess-quick-switch__copy">
+        <span>Mess</span>
+        <strong>{currentMess?.name || currentMembership?.messName || "This mess"}</strong>
+      </div>
+      <button className="mess-icon-button" disabled={readOnly} title="Switch or create mess" type="button" onClick={() => setOpen(true)}>
+        <Users size={17} />
+      </button>
+      {open ? (
+        <div className="modal-backdrop modal-backdrop--soft" role="presentation" onMouseDown={() => setOpen(false)}>
+          <div className="modal-card mess-switch-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-heading mess-switch-modal__heading">
+              <div>
+                <h2>Your messes</h2>
+                <p>Pick where you want to work now.</p>
+              </div>
+              <button className="icon-button mess-switch-modal__close" type="button" title="Close" onClick={() => setOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mess-current-strip">
+              <span>Current</span>
+              <strong>{currentMess?.name || currentMembership?.messName || "This mess"}</strong>
+            </div>
+            <div className="mess-choice-list">
+              {memberships.map((membership) => (
+                <button
+                  className={membership.id === currentMemberId ? "mess-choice active" : "mess-choice"}
+                  disabled={membership.id === currentMemberId}
+                  key={membership.id}
+                  type="button"
+                  onClick={async () => {
+                    await onSwitchMess(membership.id);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="mess-choice__mark">
+                    {membership.id === currentMemberId ? <Check size={17} /> : <Users size={17} />}
+                  </span>
+                  <div>
+                    <strong>{membership.messName || "Unnamed mess"}</strong>
+                    <span>{membership.role === "admin" ? "Admin access" : "Member access"}</span>
+                  </div>
+                  {membership.id === currentMemberId ? <small>Active</small> : <small>Open</small>}
+                </button>
+              ))}
+            </div>
+            {creating ? (
+              <form className="mess-create-inline" onSubmit={submitNewMess}>
+                <label>
+                  Mess name
+                  <input autoFocus value={messName} onChange={(event) => setMessName(event.target.value)} />
+                </label>
+                {error ? <p className="modal-error">{error}</p> : null}
+                <div className="modal-actions">
+                  <button className="secondary" disabled={saving} type="button" onClick={() => setCreating(false)}>Cancel</button>
+                  <button className="primary" disabled={saving} type="submit">
+                    <Plus size={18} /> {saving ? "Creating..." : "Create mess"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button className="mess-create-wide" type="button" onClick={() => setCreating(true)}>
+                <span><Plus size={18} /></span>
+                <div>
+                  <strong>Create another mess</strong>
+                  <small>You’ll be admin of the new mess.</small>
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -915,7 +1051,7 @@ function Shell({ message }) {
   );
 }
 
-function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, memberships, members, onRetryConnection, onSwitchMess, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
+function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, memberships, members, onCreateMess, onRetryConnection, onSwitchMess, readOnlyMode, selectedHistoryCycleId, serverDataReady, setCurrentCycle, setMessage, setMobileSidebarOpen, setSelectedHistoryCycleId, sidebarOpen, user }) {
   const selectableMembers = members
     .filter((item) => item.active)
     .sort((left, right) => {
@@ -1024,7 +1160,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
             </button>
           </nav>
         ) : null}
-        <MessSwitcher currentMemberId={member.id} currentMess={currentMess} memberships={memberships} onSwitchMess={onSwitchMess} />
+        <MessSwitcher currentMemberId={member.id} currentMess={currentMess} memberships={memberships} onCreateMess={onCreateMess} onSwitchMess={onSwitchMess} readOnly={readOnlyMode} />
         <div className="profile">
           <img src={user.photoURL} alt="" />
           <div>
@@ -1080,7 +1216,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
                 </label>
                 <label>
                   Start date
-                  <input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} />
+                  <DateInput label="Start date" value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} />
                 </label>
                 <label>
                   Meal rate type
@@ -1126,7 +1262,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
   );
 }
 
-function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings, setDepositDefaultAction }) {
+function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings, setDepositDefaultAction, setDepositScrollRequest }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today());
   const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
@@ -1141,8 +1277,11 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
       .reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
   );
   const mealPaymentGap = taka(Number(totals.meals || 0) - mealMerchantPaid);
-  const mealPaymentStatus = mealPaymentGap > 0 ? `${formatTk(mealPaymentGap)} left` : mealPaymentGap < 0 ? `${formatTk(Math.abs(mealPaymentGap))} extra paid` : "Fully paid";
-  const mealPaymentDetail = mealMerchantPaid > 0 ? `Paid ${formatTk(mealMerchantPaid)} · ${mealPaymentStatus}` : "No merchant payment yet";
+  const mealCostToPay = Math.max(0, mealPaymentGap);
+  const mealPaymentDetail =
+    mealPaymentGap < 0
+      ? `Total ${formatTk(totals.meals)} · already paid ${formatTk(mealMerchantPaid)} · ${formatTk(Math.abs(mealPaymentGap))} extra`
+      : `Total ${formatTk(totals.meals)} · already paid ${formatTk(mealMerchantPaid)}`;
 
   async function closeCycle() {
     const snapshot = buildCycleSnapshot({
@@ -1217,7 +1356,7 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
           />
         ) : null}
         <Metric
-          label="Meals"
+          label="Total Mess Meals"
           value={`${totals.boxes} meals`}
           detail="Total ordered meals"
           icon={CalendarCheck}
@@ -1229,8 +1368,8 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
           icon={CircleDollarSign}
         />
         <Metric
-          label="Meal Cost"
-          value={formatTk(totals.meals)}
+          label="Meal Cost To Pay"
+          value={formatTk(mealCostToPay)}
           detail={mealPaymentDetail}
           icon={CircleDollarSign}
         />
@@ -1253,6 +1392,7 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
         </button>
         <button className="secondary" onClick={() => {
           setDepositDefaultAction("merchant");
+          setDepositScrollRequest(Date.now());
           setActiveView("deposits");
         }}>
           <Plus size={18} /> Paid to merchant
@@ -1430,7 +1570,7 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
       </div>
       <div className="calendar-toolbar">
         <input type="month" value={selectedDate.slice(0, 7)} onChange={(event) => setSelectedDate(`${event.target.value}-01`)} />
-        <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+        <DateInput label="Selected date" value={selectedDate} onChange={setSelectedDate} />
       </div>
       <div className="calendar-grid">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
@@ -1449,7 +1589,7 @@ function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, se
           <div className="modal-card meal-details-modal" role="dialog" aria-modal="true" aria-labelledby="meal-details-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-heading meal-details-modal__heading">
               <span className="eyebrow">Daily meals</span>
-              <h2 id="meal-details-title">Meals on {detailDate}</h2>
+              <h2 id="meal-details-title">Meals on {formatDisplayDate(detailDate)}</h2>
               <p>{detailEntries.length ? "Lunch and dinner split for this date." : "No meals were saved for this date."}</p>
             </div>
             <div className="meal-details-summary">
@@ -1744,7 +1884,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
   async function approveDailyMeal() {
     if (!existingDailyMeal) return;
     await updateRecord("dailyMeals", existingDailyMeal.id, { status: "approved" });
-    setMessage(`Daily meal sheet approved for ${date}.`);
+    setMessage(`Daily meal sheet approved for ${formatDisplayDate(date)}.`);
     trackEvent("meal_approved", {
       had_lunch: Boolean(existingDailyMeal.lunch?.eaters?.length),
       had_dinner: Boolean(existingDailyMeal.dinner?.eaters?.length),
@@ -1757,7 +1897,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
     if (isDateBeforeCycle) {
       setIsEditingDay(true);
-      setMealFormError(`This date is before the month started on ${cycleStartDate}.`);
+      setMealFormError(`This date is before the month started on ${formatDisplayDate(cycleStartDate)}.`);
       trackFormError("daily_meal_sheet", "date_before_cycle");
       return;
     }
@@ -1817,7 +1957,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
       setMealFormError("");
       setMessage(
         isAdmin
-          ? `Daily meal sheet ${existingDailyMeal ? "updated" : "saved"} for ${date}.`
+          ? `Daily meal sheet ${existingDailyMeal ? "updated" : "saved"} for ${formatDisplayDate(date)}.`
           : "Meal saved. An admin will review it."
       );
       trackEvent(existingDailyMeal ? "meal_sheet_updated" : "meal_sheet_created", {
@@ -1849,10 +1989,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
         <div className="meal-sheet-top compact">
           <label>
             Date
-            <input min={cycleStartDate} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput label="Meal date" min={cycleStartDate} showToday value={date} onChange={setDate} />
           </label>
         </div>
-        {isDateBeforeCycle ? <p className="empty">This date is before this month started on {cycleStartDate}.</p> : null}
+        {isDateBeforeCycle ? <p className="empty">This date is before this month started on {formatDisplayDate(cycleStartDate)}.</p> : null}
         <div className="date-empty-state">
           <Soup size={28} />
           <div>
@@ -1879,7 +2019,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
               <h2>Daily meal sheet</h2>
               <p>
                 {existingDailyMeal
-                  ? `Showing ${date}. ${canEditSheet ? "Update lunch, dinner, and portions." : "Tap edit if you need to change it."}`
+                  ? `Showing ${formatDisplayDate(date)}. ${canEditSheet ? "Update lunch, dinner, and portions." : "Tap edit if you need to change it."}`
                   : "Add lunch and dinner, then set each person’s portion."}
               </p>
             </div>
@@ -1895,10 +2035,10 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
           <div className="meal-sheet-top compact">
             <label>
               Date
-              <input min={cycleStartDate} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <DateInput label="Meal date" min={cycleStartDate} showToday value={date} onChange={setDate} />
             </label>
           </div>
-          {isDateBeforeCycle ? <p className="empty">This date is before this month started on {cycleStartDate}.</p> : null}
+          {isDateBeforeCycle ? <p className="empty">This date is before this month started on {formatDisplayDate(cycleStartDate)}.</p> : null}
 
           <div className="meal-day-summary">
             <article>
@@ -2243,7 +2383,7 @@ function Expenses({ currentCycle, expenses, isAdmin, member, setMessage }) {
         <form className="form-grid" onSubmit={submitExpense}>
           <label>
             Date
-            <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
+            <DateInput value={form.date} onChange={(date) => setForm({ ...form, date })} />
           </label>
           <label>
             Title
@@ -2309,7 +2449,7 @@ function EntryList({ entries, isAdmin, members, type }) {
             </div>
             <div className="meal-entry-info">
               <div className="meal-entry-meta">
-                <strong>{entry.date}</strong>
+                <strong>{formatDisplayDate(entry.date)}</strong>
                 <span>{formatTk(entry.rate)} per meal · {entry.status} · by {entry.createdByName || "admin"}</span>
               </div>
               <div className="meal-entry-eaters">
@@ -2349,7 +2489,7 @@ function EntryList({ entries, isAdmin, members, type }) {
         <div>
           <strong>{`${entry.title} · ${formatTk(entry.amount)}`}</strong>
           <span>
-            {entry.date} · {entry.status} · added by {entry.createdByName || "admin"}
+            {formatDisplayDate(entry.date)} · {entry.status} · added by {entry.createdByName || "admin"}
           </span>
           <small>
             Paid by Mess Cash Fund
@@ -2474,7 +2614,7 @@ function EntryEditModal({ entry, members, onCancel, onSave, type }) {
         <div className="form-grid">
           <label>
             Date
-            <input type="date" value={draft.date || ""} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
+            <DateInput value={draft.date || ""} onChange={(date) => setDraft({ ...draft, date })} />
           </label>
           {isMeal ? (
             <>
@@ -2589,7 +2729,7 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
   );
 }
 
-function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", deposits, expenses, isAdmin, member, setMessage }) {
+function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", deposits, expenses, isAdmin, member, merchantScrollRequest = 0, onMerchantScrollConsumed, setMessage }) {
   const merchantSectionRef = useRef(null);
   const [form, setForm] = useState({ date: today(), memberId: member.id, amount: "", note: "Advance deposit" });
   const [merchantForm, setMerchantForm] = useState({ date: today(), amount: "" });
@@ -2601,12 +2741,13 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
   const showMerchantFirst = defaultAction === "merchant";
 
   useEffect(() => {
-    if (!showMerchantFirst) return undefined;
+    if (!merchantScrollRequest) return undefined;
     const frameId = window.requestAnimationFrame(() => {
       merchantSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      onMerchantScrollConsumed?.();
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [showMerchantFirst]);
+  }, [merchantScrollRequest, onMerchantScrollConsumed]);
 
   async function submitDeposit(event) {
     event.preventDefault();
@@ -2675,7 +2816,7 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
           <form className="form-grid" onSubmit={submitDeposit}>
             <label>
               Date
-              <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
+              <DateInput value={form.date} onChange={(date) => setForm({ ...form, date })} />
             </label>
             <label>
               Member
@@ -2709,7 +2850,7 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
           <form className="form-grid" onSubmit={submitMerchantPayment}>
             <label>
               Date
-              <input type="date" value={merchantForm.date} onChange={(event) => setMerchantForm({ ...merchantForm, date: event.target.value })} />
+              <DateInput value={merchantForm.date} onChange={(date) => setMerchantForm({ ...merchantForm, date })} />
             </label>
             <label>
               Amount
@@ -2775,7 +2916,7 @@ function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", depo
                 <div>
                   <strong>{formatTk(payment.amount)}</strong>
                   <span>
-                    {payment.date} · {payment.status}
+                    {formatDisplayDate(payment.date)} · {payment.status}
                   </span>
                   <small>Paid to merchant from mess cash</small>
                 </div>
@@ -3103,14 +3244,14 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
         <div className="history-item history-item--detail">
           <div className="history-item__header">
             <div>
-              <strong>{selectedCycle.name || `${selectedCycle.startDate} to ${selectedCycle.endDate || "closing"}`}</strong>
-              <span>{selectedCycle.startDate} to {selectedCycle.endDate || "closed"}</span>
+              <strong>{selectedCycle.name || formatDisplayDateRange(selectedCycle.startDate, selectedCycle.endDate)}</strong>
+              <span>{formatDisplayDateRange(selectedCycle.startDate, selectedCycle.endDate, "closed")}</span>
             </div>
             {closed.length > 1 ? (
               <select value={selectedCycle.id} onChange={(event) => onSelectCycle?.(event.target.value)}>
                 {closed.map((cycle) => (
                   <option key={cycle.id} value={cycle.id}>
-                    {cycle.name || `${cycle.startDate} to ${cycle.endDate || "closing"}`}
+                    {cycle.name || formatDisplayDateRange(cycle.startDate, cycle.endDate)}
                   </option>
                 ))}
               </select>
@@ -3140,7 +3281,7 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
             {sortedDates.length ? sortedDates.map((day) => (
               <div className="history-member-row" key={day.date}>
                 <div className="history-member-row__name">
-                  <strong>{day.date}</strong>
+                  <strong>{formatDisplayDate(day.date)}</strong>
                   <span>{day.meals.length} saved meal{day.meals.length === 1 ? "" : "s"}</span>
                 </div>
                 <div className="history-member-row__metrics">
@@ -3163,8 +3304,8 @@ function History({ cycles, onSelectCycle, selectedCycleId }) {
           <article className={cycle.id === selectedCycle?.id ? "history-item active" : "history-item"} key={cycle.id} onClick={() => onSelectCycle?.(cycle.id)} role="button" tabIndex={0}>
             <div className="history-item__header">
               <div>
-                <strong>{cycle.name || `${cycle.startDate} to ${cycle.endDate || "closing"}`}</strong>
-                <span>{cycle.startDate} to {cycle.endDate || "closed"}</span>
+                <strong>{cycle.name || formatDisplayDateRange(cycle.startDate, cycle.endDate)}</strong>
+                <span>{formatDisplayDateRange(cycle.startDate, cycle.endDate, "closed")}</span>
               </div>
               <span className="history-status">Closed</span>
             </div>

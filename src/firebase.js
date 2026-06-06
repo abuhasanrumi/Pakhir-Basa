@@ -47,7 +47,11 @@ export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
 
 if (db && useFirestoreEmulator) {
-  connectFirestoreEmulator(db, firestoreEmulatorHost, firestoreEmulatorPort);
+  const globalKey = "__pakhirBasarFirestoreEmulatorConnected";
+  if (!globalThis[globalKey]) {
+    connectFirestoreEmulator(db, firestoreEmulatorHost, firestoreEmulatorPort);
+    globalThis[globalKey] = true;
+  }
 }
 
 export async function signInWithGoogle() {
