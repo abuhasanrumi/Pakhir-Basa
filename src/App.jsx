@@ -1975,7 +1975,6 @@ function MealSessionEditor({
       {allowCountEdit ? (
         <div className="meal-quick-actions">
           <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setAllPortions(setPortions, 1, availableMembers)}>All 1</button>
-          <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setAllPortions(setPortions, 0.5, availableMembers)}>All 0.5</button>
           <button disabled={portionControlsDisabled || !availableMembers.length} type="button" onClick={() => setEvenSplit(setPortions, ordered, availableMembers)}>Split evenly</button>
           <button disabled={portionControlsDisabled} type="button" onClick={() => setAllPortions(setPortions, 0, availableMembers)}>Clear</button>
         </div>
@@ -1996,7 +1995,7 @@ function MealSessionEditor({
               >
                 {unavailableMembers[person.id] ? <Plus size={14} /> : <X size={14} />}
               </button>
-              {unavailableMembers[person.id] ? <small>Not eating</small> : null}
+              
             </div>
             <div className="portion-controls">
               <button disabled={portionControlsDisabled || unavailableMembers[person.id]} type="button" onClick={() => adjustPortion(setPortions, person.id, -0.5)}>-</button>
