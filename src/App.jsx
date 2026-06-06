@@ -59,6 +59,13 @@ function formatTk(amount) {
   return `৳${taka(amount).toLocaleString("en-BD", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
+function formatDisplayDate(date) {
+  if (!date) return "";
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function isBeforeDate(date, minDate) {
   return Boolean(date && minDate && date < minDate);
 }
@@ -242,6 +249,7 @@ export function App() {
   const [currentCycle, setCurrentCycle] = useState(null);
   const [selectedHistoryCycleId, setSelectedHistoryCycleId] = useState("");
   const [activeView, setActiveView] = useState("dashboard");
+  const [depositDefaultAction, setDepositDefaultAction] = useState("deposit");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [syncGateExpired, setSyncGateExpired] = useState(false);
@@ -431,7 +439,9 @@ export function App() {
 
   const pendingCount = useMemo(
     () => dailyMeals.filter((entry) => entry.status === "pending").length +
-      (isCalculatedMonth ? expenses.filter((expense) => expense.status === "pending").length : 0) +
+      (isCalculatedMonth
+        ? expenses.filter((expense) => expense.status === "pending").length
+        : expenses.filter((expense) => expense.status === "pending" && expense.category === "meal" && expense.payerId === "mess_cash").length) +
       deposits.filter((d) => d.status === "pending").length,
     [dailyMeals, expenses, deposits, isCalculatedMonth],
   );
@@ -499,11 +509,11 @@ export function App() {
     const approvedDeposits = deposits.filter((d) => d.status === "approved");
     const totalDeposits = approvedDeposits.reduce((sum, d) => sum + Number(d.amount || 0), 0);
 
-    const approvedMessBazaars = isCalculatedMonth ? expenses.filter((e) => e.status === "approved" && e.payerId === "mess_cash") : [];
-    const totalMessBazaars = approvedMessBazaars.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const approvedMessCashSpending = expenses.filter((e) => e.status === "approved" && e.payerId === "mess_cash");
+    const totalMessCashSpending = approvedMessCashSpending.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
-    return taka(totalDeposits - totalMessBazaars);
-  }, [deposits, expenses, isCalculatedMonth]);
+    return taka(totalDeposits - totalMessCashSpending);
+  }, [deposits, expenses]);
 
   async function switchMess(memberIdToSelect) {
     const nextMember = memberships.find((item) => item.id === memberIdToSelect);
@@ -675,6 +685,7 @@ export function App() {
             deposits={deposits}
             messCash={messCash}
             settings={settings}
+            setDepositDefaultAction={setDepositDefaultAction}
           />
         ) : null}
         {activeView === "meals" ? (
@@ -704,6 +715,8 @@ export function App() {
             activeMembers={activeMembers}
             currentCycle={currentCycle}
             deposits={deposits}
+            defaultAction={depositDefaultAction}
+            expenses={expenses}
             isAdmin={isAdmin}
             member={member}
             setMessage={setMessage}
@@ -1113,7 +1126,7 @@ function NoCycleScreen({ currentMess, cycles, isAdmin, isOnline, member, members
   );
 }
 
-function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
+function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings, setDepositDefaultAction }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today());
   const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
@@ -1224,8 +1237,17 @@ function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculate
           <Plus size={18} /> Add bazaar
           </button>
         ) : null}
-        <button className="secondary" onClick={() => setActiveView("deposits")}>
+        <button className="secondary" onClick={() => {
+          setDepositDefaultAction("deposit");
+          setActiveView("deposits");
+        }}>
           <Plus size={18} /> Add deposit
+        </button>
+        <button className="secondary" onClick={() => {
+          setDepositDefaultAction("merchant");
+          setActiveView("deposits");
+        }}>
+          <Plus size={18} /> Paid to merchant
         </button>
       </section>
 
@@ -2559,10 +2581,15 @@ function ConfirmModal({ confirmLabel = "Confirm", message, onCancel, onConfirm, 
   );
 }
 
-function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setMessage }) {
+function Deposits({ activeMembers, currentCycle, defaultAction = "deposit", deposits, expenses, isAdmin, member, setMessage }) {
   const [form, setForm] = useState({ date: today(), memberId: member.id, amount: "", note: "Advance deposit" });
+  const [merchantForm, setMerchantForm] = useState({ date: today(), amount: "" });
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteMerchantTarget, setDeleteMerchantTarget] = useState(null);
   const visibleDeposits = isAdmin ? deposits : deposits.filter((deposit) => deposit.memberId === member.id || deposit.status === "approved");
+  const merchantPayments = expenses.filter((expense) => expense.category === "meal" && expense.payerId === "mess_cash");
+  const visibleMerchantPayments = isAdmin ? merchantPayments : merchantPayments.filter((expense) => expense.createdBy === member.id || expense.status === "approved");
+  const showMerchantFirst = defaultAction === "merchant";
 
   async function submitDeposit(event) {
     event.preventDefault();
@@ -2590,76 +2617,173 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
     });
   }
 
+  async function submitMerchantPayment(event) {
+    event.preventDefault();
+    if (Number(merchantForm.amount) <= 0) {
+      trackFormError("merchant_payment", "missing_amount");
+      return setMessage("Add the paid amount first.");
+    }
+
+    await addRecord("expenses", {
+      messId: currentCycle.messId,
+      cycleId: currentCycle.id,
+      date: merchantForm.date,
+      title: "Paid to merchant",
+      category: "meal",
+      amount: Number(merchantForm.amount),
+      payerId: "mess_cash",
+      splitMethod: "mess_fund",
+      participants: [],
+      customShares: {},
+      status: isAdmin ? "approved" : "pending",
+      createdBy: member.id,
+      createdByName: member.name,
+    });
+    setMerchantForm({ ...merchantForm, amount: "" });
+    setMessage(isAdmin ? "Merchant payment added." : "Merchant payment saved. An admin will review it.");
+    trackEvent("merchant_payment_created", {
+      status: isAdmin ? "approved" : "pending",
+      amount: Number(merchantForm.amount),
+    });
+  }
+
   return (
     <div className="two-column">
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Add deposit</h2>
-          <p>Use this when someone gives money to the mess.</p>
-        </div>
-        <form className="form-grid" onSubmit={submitDeposit}>
-          <label>
-            Date
-            <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
-          </label>
-          <label>
-            Member
-            <select value={form.memberId} onChange={(event) => setForm({ ...form, memberId: event.target.value })}>
-              {activeMembers.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Amount
-            <input min="1" type="number" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
-          </label>
-          <label>
-            Note
-            <input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
-          </label>
-          <button className="primary" type="submit">
-            <Plus size={18} /> Save deposit
-          </button>
-        </form>
-      </section>
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Deposits</h2>
-          <p>Money added by everyone this month.</p>
-        </div>
-        <div className="entry-list">
-          {visibleDeposits.map((deposit) => (
-            <article className="entry-row" key={deposit.id}>
-              <div>
-                <strong>{formatTk(deposit.amount)}</strong>
-                <span>
-                  {deposit.date} · {deposit.status} · {activeMembers.find((person) => person.id === deposit.memberId)?.name || deposit.memberId}
-                </span>
-                <small>{deposit.note || "Deposit"}</small>
-              </div>
-              {isAdmin ? (
-                <div className="row-actions">
-                  {deposit.status === "pending" ? (
-                    <button className="icon-button approve" title="Approve" onClick={async () => {
-                      await updateRecord("deposits", deposit.id, { status: "approved" });
-                      trackEvent("deposit_approved", { amount: Number(deposit.amount || 0) });
-                    }}>
-                      <Check size={17} />
-                    </button>
-                  ) : null}
-                  <button className="icon-button danger-icon" title="Delete" onClick={() => setDeleteTarget(deposit)}>
-                    <Trash2 size={17} />
-                  </button>
+      <div className="stack">
+        <section className={showMerchantFirst ? "panel deposit-form-panel muted" : "panel deposit-form-panel"}>
+          <div className="section-heading">
+            <h2>Add deposit</h2>
+            <p>Use this when someone gives money to the mess.</p>
+          </div>
+          <form className="form-grid" onSubmit={submitDeposit}>
+            <label>
+              Date
+              <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
+            </label>
+            <label>
+              Member
+              <select value={form.memberId} onChange={(event) => setForm({ ...form, memberId: event.target.value })}>
+                {activeMembers.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Amount
+              <input min="1" type="number" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
+            </label>
+            <label>
+              Note
+              <input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+            </label>
+            <button className="primary" type="submit">
+              <Plus size={18} /> Save deposit
+            </button>
+          </form>
+        </section>
+
+        <section className={showMerchantFirst ? "panel merchant-payment-panel" : "panel merchant-payment-panel muted"}>
+          <div className="section-heading">
+            <h2>Paid to merchant</h2>
+            <p>Use this when mess cash is paid for meals. It reduces cash and counts as meal cost.</p>
+          </div>
+          <form className="form-grid" onSubmit={submitMerchantPayment}>
+            <label>
+              Date
+              <input type="date" value={merchantForm.date} onChange={(event) => setMerchantForm({ ...merchantForm, date: event.target.value })} />
+            </label>
+            <label>
+              Amount
+              <input min="1" type="number" value={merchantForm.amount} onChange={(event) => setMerchantForm({ ...merchantForm, amount: event.target.value })} />
+            </label>
+            <div className="fund-note">
+              Paid from mess cash
+            </div>
+            <button className="primary" type="submit">
+              <Plus size={18} /> Save merchant payment
+            </button>
+          </form>
+        </section>
+      </div>
+
+      <div className="stack">
+        <section className="panel deposit-list-panel">
+          <div className="section-heading">
+            <h2>Deposits</h2>
+            <p>Money added by everyone this month.</p>
+          </div>
+          <div className="entry-list">
+            {visibleDeposits.map((deposit) => (
+              <article className="entry-row" key={deposit.id}>
+                <div>
+                  <strong>
+                    {activeMembers.find((person) => person.id === deposit.memberId)?.name || deposit.memberId} paid {formatTk(deposit.amount)} on {formatDisplayDate(deposit.date)}
+                  </strong>
+                  <span>
+                    {deposit.status}
+                  </span>
+                  <small>{deposit.note || "Deposit"}</small>
                 </div>
-              ) : null}
-            </article>
-          ))}
-          {!visibleDeposits.length ? <p className="empty">No deposits yet.</p> : null}
-        </div>
-      </section>
+                {isAdmin ? (
+                  <div className="row-actions">
+                    {deposit.status === "pending" ? (
+                      <button className="icon-button approve" title="Approve" onClick={async () => {
+                        await updateRecord("deposits", deposit.id, { status: "approved" });
+                        trackEvent("deposit_approved", { amount: Number(deposit.amount || 0) });
+                      }}>
+                        <Check size={17} />
+                      </button>
+                    ) : null}
+                    <button className="icon-button danger-icon" title="Delete" onClick={() => setDeleteTarget(deposit)}>
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            ))}
+            {!visibleDeposits.length ? <p className="empty">No deposits yet.</p> : null}
+          </div>
+        </section>
+
+        <section className="panel merchant-list-panel">
+          <div className="section-heading">
+            <h2>Merchant payments</h2>
+            <p>Meal payments made from mess cash.</p>
+          </div>
+          <div className="entry-list">
+            {visibleMerchantPayments.map((payment) => (
+              <article className="entry-row" key={payment.id}>
+                <div>
+                  <strong>{formatTk(payment.amount)}</strong>
+                  <span>
+                    {payment.date} · {payment.status}
+                  </span>
+                  <small>Paid to merchant from mess cash</small>
+                </div>
+                {isAdmin ? (
+                  <div className="row-actions">
+                    {payment.status === "pending" ? (
+                      <button className="icon-button approve" title="Approve" onClick={async () => {
+                        await updateRecord("expenses", payment.id, { status: "approved" });
+                        trackEvent("merchant_payment_approved", { amount: Number(payment.amount || 0) });
+                      }}>
+                        <Check size={17} />
+                      </button>
+                    ) : null}
+                    <button className="icon-button danger-icon" title="Delete" onClick={() => setDeleteMerchantTarget(payment)}>
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            ))}
+            {!visibleMerchantPayments.length ? <p className="empty">No merchant payments yet.</p> : null}
+          </div>
+        </section>
+      </div>
+
       <ConfirmModal
         confirmLabel="Delete"
         message="This deposit entry will be permanently removed."
@@ -2671,6 +2795,18 @@ function Deposits({ activeMembers, currentCycle, deposits, isAdmin, member, setM
         }}
         open={Boolean(deleteTarget)}
         title="Delete this deposit?"
+      />
+      <ConfirmModal
+        confirmLabel="Delete"
+        message="This merchant payment will be permanently removed."
+        onCancel={() => setDeleteMerchantTarget(null)}
+        onConfirm={async () => {
+          await deleteRecord("expenses", deleteMerchantTarget.id);
+          trackEvent("merchant_payment_deleted", { status: deleteMerchantTarget.status, amount: Number(deleteMerchantTarget.amount || 0) });
+          setDeleteMerchantTarget(null);
+        }}
+        open={Boolean(deleteMerchantTarget)}
+        title="Delete this merchant payment?"
       />
     </div>
   );

@@ -130,6 +130,32 @@ describe("expense and ledger calculation", () => {
     expect(ledger.rumi.expenseCost).toBe(0);
   });
 
+  it("counts merchant meal payments as calculated meal cost", () => {
+    const ledger = calculateLedger({
+      members,
+      settings: { mealRateMode: "calculated", mealRate: 70 },
+      mealEntries: [
+        {
+          status: "approved",
+          boxCount: 4,
+          eaters: ["rumi", "sami"],
+        },
+      ],
+      expenses: [
+        {
+          status: "approved",
+          category: "meal",
+          amount: 400,
+          payerId: "mess_cash",
+          participants: [],
+        },
+      ],
+    });
+
+    expect(ledger.rumi.mealCost).toBe(200);
+    expect(ledger.sami.mealCost).toBe(200);
+  });
+
   it("credits approved advances deposits to member balances", () => {
     const ledger = calculateLedger({
       members,
