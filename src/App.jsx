@@ -1705,6 +1705,14 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     return next;
   }
 
+  // Firestore listeners hand back fresh arrays/objects on every snapshot (including
+  // other people's saves), so depend on what the sheet actually shows. Otherwise any
+  // remote write resets an in-progress edit, e.g. a rate typed as 80 snaps back to 70.
+  const memberIdsKey = activeMembers.map((person) => person.id).join(",");
+  const existingDailyMealKey = existingDailyMeal
+    ? JSON.stringify([existingDailyMeal.id, existingDailyMeal.status, existingDailyMeal.lunch, existingDailyMeal.dinner])
+    : "";
+
   useEffect(() => {
     const defaultRate = settings.mealRate || 70;
 
@@ -1734,7 +1742,7 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
 
     setIsEditingDay(false);
     setEditingRates({ lunch: false, dinner: false });
-  }, [activeMembers, existingDailyMeal, settings.mealRate]);
+  }, [date, memberIdsKey, existingDailyMealKey, settings.mealRate]);
 
   useEffect(() => {
     if (savedDailyMeal && optimisticDailyMeal?.id === savedDailyMeal.id) {
@@ -1853,7 +1861,9 @@ function Meals({ activeMembers, currentCycle, dailyMeals, expenses, isAdmin, mea
     const portionTotal = sumPortions(portions);
     return {
       boxCount: isAdmin ? portionTotal : 0,
-      rate: isAdmin ? Number(rate || settings.mealRate || 70) : Number(settings.mealRate || 70),
+      // Members can't edit the rate, but `rate` already holds the day's saved rate
+      // (or the month default), so keep it instead of resetting to the default.
+      rate: Number(rate || settings.mealRate || 70),
       eaters,
       portions: positivePortions(portions),
       skipped: false,
