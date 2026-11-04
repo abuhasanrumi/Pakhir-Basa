@@ -9,6 +9,7 @@ import {
     getDoc,
     getDocs,
     getFirestore,
+    initializeFirestore,
     limit,
     query,
     runTransaction,
@@ -44,7 +45,23 @@ export const initialAdminEmail = import.meta.env.VITE_INITIAL_ADMIN_EMAIL?.toLow
 
 export const app = hasFirebaseConfig ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
-export const db = app ? getFirestore(app) : null;
+// Firestore's default streaming connection often stalls on Brave and on iOS (every
+// iOS browser is WebKit), so the first reads sit on a spinner until the SDK's
+// auto-detect gives up. Use long polling there straight away.
+function needsLongPolling() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isSafari = /^((?!chrome|chromium|crios|fxios|edg|android).)*safari/i.test(ua);
+  const isBrave = Boolean(navigator.brave);
+  return isIOS || isSafari || isBrave;
+}
+
+export const db = app
+  ? needsLongPolling()
+    ? initializeFirestore(app, { experimentalForceLongPolling: true })
+    : getFirestore(app)
+  : null;
 
 if (db && useFirestoreEmulator) {
   const globalKey = "__pakhirBasarFirestoreEmulatorConnected";
