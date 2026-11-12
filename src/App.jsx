@@ -535,7 +535,7 @@ export function App() {
             totals={totals}
           />
         ) : null}
-        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} currentMess={currentMess} cycleMembers={activeMembers} member={member} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
+        {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} currentMess={currentMess} ledger={ledger} member={member} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
         {activeView === "history" ? <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
       </main>
 

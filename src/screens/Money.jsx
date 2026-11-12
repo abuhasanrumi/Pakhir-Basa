@@ -148,7 +148,7 @@ export function Money({ activeMembers, currentCycle, deposits, expenses, isAdmin
           ) : null}
           <div>
             <ArrowUpRight size={16} />
-            <span>Paid merchant</span>
+            <span title="Paid to merchant">Paid</span>
             <strong>{formatTk(paidMerchant)}</strong>
           </div>
           {!isCalculatedMonth ? (
