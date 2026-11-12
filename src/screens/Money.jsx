@@ -5,8 +5,9 @@ import { ConfirmModal } from "../components/ConfirmModal.jsx";
 import { MONEY_KINDS, MoneyForm, moneyKindOf } from "../components/MoneyForm.jsx";
 import { Sheet } from "../components/Sheet.jsx";
 import { deleteRecord, updateRecord } from "../firebase";
+import { logActivity } from "../lib/activity";
 import { taka } from "../lib/calculations";
-import { formatDisplayDate, formatTk, today } from "../lib/format";
+import { addDays, formatDisplayDate, formatTk, today } from "../lib/format";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -18,10 +19,8 @@ const FILTERS = [
 
 function dayLabel(date) {
   const todayDate = today();
-  const yesterday = new Date(`${todayDate}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
   if (date === todayDate) return "Today";
-  if (date === yesterday.toISOString().slice(0, 10)) return "Yesterday";
+  if (date === addDays(todayDate, -1)) return "Yesterday";
   return formatDisplayDate(date);
 }
 
@@ -75,6 +74,7 @@ export function Money({ activeMembers, currentCycle, deposits, expenses, isAdmin
     await updateRecord(item.collection, item.id, { status: "approved" });
     trackEvent(`${item.kind === "deposit" ? "deposit" : item.kind === "merchant" ? "merchant_payment" : "expense"}_approved`, { amount: Number(item.amount || 0) });
     setMessage("Approved.");
+    logActivity({ cycleId: currentCycle.id, kind: "money", member, messId: currentCycle.messId, summary: `Approved ${describe(item).title.toLowerCase()} ${formatTk(item.amount)} (${formatDisplayDate(item.date)})` });
     setOpenItem(null);
   }
 
@@ -301,6 +301,7 @@ export function Money({ activeMembers, currentCycle, deposits, expenses, isAdmin
         onConfirm={async () => {
           await deleteRecord(deleteTarget.collection, deleteTarget.id);
           trackEvent(`${deleteTarget.kind === "deposit" ? "deposit" : deleteTarget.kind === "merchant" ? "merchant_payment" : "expense"}_deleted`, { status: deleteTarget.status, amount: Number(deleteTarget.amount || 0) });
+          logActivity({ cycleId: currentCycle.id, kind: "money", member, messId: currentCycle.messId, summary: `Deleted ${describe(deleteTarget).title.toLowerCase()} ${formatTk(deleteTarget.amount)} (${formatDisplayDate(deleteTarget.date)})` });
           setDeleteTarget(null);
           setOpenItem(null);
           setMessage("Deleted.");

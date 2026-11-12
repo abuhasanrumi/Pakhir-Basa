@@ -1,5 +1,6 @@
 import { ArrowLeft, X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 // A bottom sheet on phones and a centred dialog on larger screens.
 export function Sheet({ children, onBack, onClose, open = true, title }) {
@@ -22,7 +23,8 @@ export function Sheet({ children, onBack, onClose, open = true, title }) {
 
   if (!open) return null;
 
-  return (
+  // Render at <body> level so the sheet always covers the tab bar and the + button.
+  return createPortal(
     <div className="ui-sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section aria-label={title} aria-modal="true" className="ui-sheet" role="dialog" onMouseDown={(event) => event.stopPropagation()}>
         <div className="ui-sheet__handle" aria-hidden="true" />
@@ -39,6 +41,7 @@ export function Sheet({ children, onBack, onClose, open = true, title }) {
         </header>
         <div className="ui-sheet__body">{children}</div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

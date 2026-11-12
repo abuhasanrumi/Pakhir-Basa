@@ -1,6 +1,21 @@
 import { taka } from "./calculations";
 
-export const today = () => new Date().toISOString().slice(0, 10);
+// Local calendar date as YYYY-MM-DD (toISOString would give the UTC date, which is
+// yesterday between midnight and 6 am in Bangladesh).
+export function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export const today = () => localDateString();
+
+export function addDays(dateString, days) {
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return localDateString(date);
+}
 
 export const OFFLINE_NOTICE = "You’re offline, so this is the last saved version. You can edit again once you’re back online.";
 

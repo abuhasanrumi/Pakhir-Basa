@@ -5,6 +5,7 @@ import { ConfirmModal } from "../components/ConfirmModal.jsx";
 import { Sheet } from "../components/Sheet.jsx";
 import { createInvite, deleteRecord, updateRecord } from "../firebase";
 import { copyToClipboard } from "../lib/actions";
+import { logActivity } from "../lib/activity";
 import { formatTk } from "../lib/format";
 
 const ROLES = [
@@ -17,6 +18,7 @@ function initialOf(name) {
 }
 
 export function Members({ currentCycle, currentMess, ledger = {}, member, members, setCurrentCycle, setMessage }) {
+  const log = (summary) => logActivity({ cycleId: currentCycle?.id || "", kind: "people", member, messId: currentCycle?.messId || currentMess?.id, summary });
   const [inviteOpen, setInviteOpen] = useState(false);
   const [openId, setOpenId] = useState("");
   const [confirm, setConfirm] = useState(null);
@@ -33,6 +35,7 @@ export function Members({ currentCycle, currentMess, ledger = {}, member, member
     await updateRecord("cycles", currentCycle.id, { memberIds: nextMemberIds });
     setCurrentCycle({ ...currentCycle, memberIds: nextMemberIds });
     setMessage(include ? `${person.name} added to this month.` : `${person.name} removed from this month.`);
+    log(include ? `Added ${person.name} to this month` : `Removed ${person.name} from this month`);
     trackEvent(include ? "cycle_member_added" : "cycle_member_removed", { member_count: nextMemberIds.length });
   }
 
@@ -45,6 +48,7 @@ export function Members({ currentCycle, currentMess, ledger = {}, member, member
     }
     await updateRecord("members", person.id, { role });
     setMessage(`${person.name} is now ${role === "admin" ? "an admin" : "a member"}.`);
+    log(`Made ${person.name} ${role === "admin" ? "an admin" : "a member"}`);
     trackEvent("member_role_changed", { from_role: person.role, to_role: role });
   }
 
@@ -56,6 +60,7 @@ export function Members({ currentCycle, currentMess, ledger = {}, member, member
     }
     await updateRecord("members", person.id, { active });
     setMessage(active ? `${person.name} can use the mess again.` : `${person.name} is deactivated.`);
+    log(`${active ? "Activated" : "Deactivated"} ${person.name}`);
     trackEvent(active ? "member_activated" : "member_deactivated", { role: person.role });
   }
 
@@ -73,6 +78,7 @@ export function Members({ currentCycle, currentMess, ledger = {}, member, member
     await deleteRecord("members", person.id);
     setOpenId("");
     setMessage(`${person.name} was removed from this mess.`);
+    log(`Deleted ${person.name} from the mess`);
     trackEvent("member_deleted", { was_in_current_cycle: includedIds.includes(person.id) });
   }
 

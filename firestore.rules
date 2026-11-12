@@ -117,5 +117,24 @@ service cloud.firestore {
         && request.resource.data.createdBy == memberId(request.resource.data.messId);
       allow update, delete: if isAdmin(resource.data.messId);
     }
+
+    // One plan per member (doc id = member id): usual meals plus per-day on/off and guests.
+    // A member edits only their own plan; admins can edit anyone's.
+    match /mealPlans/{planId} {
+      allow read: if isActiveMember(resource.data.messId);
+      allow create, update: if isActiveMember(request.resource.data.messId)
+        && request.resource.data.memberId == planId
+        && (resource == null || resource.data.messId == request.resource.data.messId)
+        && (planId == memberId(request.resource.data.messId) || isAdmin(request.resource.data.messId));
+      allow delete: if isAdmin(resource.data.messId);
+    }
+
+    // Append-only change log. Anyone active can add their own entries; nobody edits or deletes.
+    match /activity/{activityId} {
+      allow read: if isActiveMember(resource.data.messId);
+      allow create: if isActiveMember(request.resource.data.messId)
+        && request.resource.data.actorId == memberId(request.resource.data.messId);
+      allow update, delete: if false;
+    }
   }
 }

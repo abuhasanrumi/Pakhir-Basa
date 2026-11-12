@@ -1,7 +1,8 @@
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Moon, Share2, Sun, Users, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, FileDown, ImageDown, Moon, Share2, Sun, Users, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { trackEvent } from "../analytics";
 import { copyToClipboard } from "../lib/actions";
+import { renderReportImage } from "../lib/reportImage";
 import { taka } from "../lib/calculations";
 import { formatDisplayDate, formatTk } from "../lib/format";
 
@@ -41,14 +42,14 @@ function monthRange(cycle) {
   return `${formatDisplayDate(cycle.startDate)} – ${cycle.endDate ? formatDisplayDate(cycle.endDate) : "closed"}`;
 }
 
-export function History({ cycles, onSelectCycle, selectedCycleId }) {
+export function History({ cycles, messName, onSelectCycle, selectedCycleId }) {
   const closed = cycles
     .filter((cycle) => cycle.status === "closed")
     .sort((left, right) => String(right.startDate || "").localeCompare(String(left.startDate || "")));
   const selectedCycle = closed.find((cycle) => cycle.id === selectedCycleId) || null;
 
   if (selectedCycle) {
-    return <MonthReport cycle={selectedCycle} onBack={() => onSelectCycle?.("")} />;
+    return <MonthReport cycle={selectedCycle} messName={messName} onBack={() => onSelectCycle?.("")} />;
   }
 
   return (
@@ -114,7 +115,7 @@ const REPORT_TABS = [
   { id: "money", label: "Money", icon: Wallet },
 ];
 
-function MonthReport({ cycle, onBack }) {
+function MonthReport({ cycle, messName, onBack }) {
   const [tab, setTab] = useState("people");
   const [shareStatus, setShareStatus] = useState("");
   const summary = useMemo(() => summarizeCycle(cycle), [cycle]);
@@ -150,15 +151,74 @@ function MonthReport({ cycle, onBack }) {
     window.setTimeout(() => setShareStatus(""), 4000);
   }
 
+  async function shareImage() {
+    setShareStatus("Making image…");
+    const rows = [...summary.ledger]
+      .sort((left, right) => Number(left.balance || 0) - Number(right.balance || 0))
+      .map((row) => ({ name: row.name, meals: row.mealCount, paid: row.deposits, balance: row.balance }));
+    const blob = await renderReportImage({
+      messName,
+      monthName: monthTitle(cycle),
+      range: monthRange(cycle),
+      mealRate: summary.mealRate,
+      totalMeals: summary.totalMeals,
+      mealCost: summary.mealCost,
+      deposits: summary.deposits,
+      rows,
+    });
+    if (!blob) {
+      setShareStatus("Couldn’t make the image on this device.");
+      return;
+    }
+    const fileName = `${monthTitle(cycle).replace(/[^\w]+/g, "-").toLowerCase()}-report.png`;
+    const file = new File([blob], fileName, { type: "image/png" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: monthTitle(cycle) });
+        setShareStatus("");
+        trackEvent("history_report_shared", { method: "image_share" });
+        return;
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setShareStatus("");
+        return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setShareStatus("Image saved. Send it in your group chat.");
+    trackEvent("history_report_shared", { method: "image_download" });
+    window.setTimeout(() => setShareStatus(""), 4000);
+  }
+
+  function printReport() {
+    setTab("people");
+    trackEvent("history_report_printed");
+    window.setTimeout(() => window.print(), 50);
+  }
+
   return (
     <div className="month-report">
       <div className="month-report__bar">
         <button className="secondary month-report__back" type="button" onClick={onBack}>
           <ArrowLeft size={18} /> All months
         </button>
-        <button className="secondary" type="button" onClick={shareReport}>
-          <Share2 size={18} /> Share
-        </button>
+        <div className="month-report__share">
+          <button className="secondary" title="Share as text" type="button" onClick={shareReport}>
+            <Share2 size={18} /> <span>Text</span>
+          </button>
+          <button className="secondary" title="Share as image" type="button" onClick={shareImage}>
+            <ImageDown size={18} /> <span>Image</span>
+          </button>
+          <button className="secondary" title="Save as PDF or print" type="button" onClick={printReport}>
+            <FileDown size={18} /> <span>PDF</span>
+          </button>
+        </div>
       </div>
       {shareStatus ? <div className="notice">{shareStatus}</div> : null}
 

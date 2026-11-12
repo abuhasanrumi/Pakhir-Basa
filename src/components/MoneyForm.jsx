@@ -2,7 +2,8 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { trackEvent, trackFormError } from "../analytics";
 import { addRecord, updateRecord } from "../firebase";
-import { formatTk, today } from "../lib/format";
+import { logActivity } from "../lib/activity";
+import { formatDisplayDate, formatTk, today } from "../lib/format";
 import { DateInput } from "./DateInput.jsx";
 
 export const MONEY_KINDS = {
@@ -93,6 +94,16 @@ export function MoneyForm({ activeMembers, currentCycle, dueToMerchant = 0, entr
           method: kind === "deposit" ? method : undefined,
         });
       }
+      const what = kind === "deposit" ? `deposit from ${personName}` : kind === "merchant" ? "merchant payment" : `bazaar (${note.trim() || "Bazaar"})`;
+      logActivity({
+        cycleId: currentCycle.id,
+        kind: "money",
+        member,
+        messId: currentCycle.messId,
+        summary: entry
+          ? `Edited ${what}: ${formatTk(entry.amount)} → ${formatTk(numericAmount)} on ${formatDisplayDate(date)}`
+          : `Added ${what}: ${formatTk(numericAmount)} on ${formatDisplayDate(date)}${isAdmin ? "" : " (pending)"}`,
+      });
       onDone?.();
     } catch (saveError) {
       console.error("Money save failed", saveError);

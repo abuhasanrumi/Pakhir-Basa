@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from "firebase/auth";
-import { Banknote, CalendarCheck, LayoutGrid, LogOut, Plus, Soup, Users, Wallet } from "lucide-react";
+import { Banknote, CalendarCheck, LayoutGrid, LogOut, Plus, ScrollText, Soup, Users, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { identifyAnalyticsUser, trackEvent, trackPageView } from "./analytics";
 import { Avatar } from "./components/Avatar.jsx";
@@ -18,7 +18,8 @@ import { Dashboard } from "./screens/Dashboard.jsx";
 import { Money } from "./screens/Money.jsx";
 import { History } from "./screens/History.jsx";
 import { LoginScreen } from "./screens/LoginScreen.jsx";
-import { Meals } from "./screens/Meals.jsx";
+import { Activity } from "./screens/Activity.jsx";
+import { MealsScreen } from "./screens/Meals.jsx";
 import { Members } from "./screens/Members.jsx";
 import { MessSetupScreen } from "./screens/MessSetupScreen.jsx";
 import { NoCycleScreen } from "./screens/NoCycleScreen.jsx";
@@ -33,6 +34,7 @@ export function App() {
   const [activeView, setActiveView] = useState("dashboard");
   const [quickAdd, setQuickAdd] = useState({ open: false, step: null });
   const [mealSessionRequest, setMealSessionRequest] = useState("");
+  const [mealDateRequest, setMealDateRequest] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [syncGateExpired, setSyncGateExpired] = useState(false);
@@ -142,11 +144,15 @@ export function App() {
   const { rows: expenses, serverSynced: expensesSynced } = useCollection("expenses", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
   const { rows: deposits, serverSynced: depositsSynced } = useCollection("deposits", { cycleId: currentCycle?.id, messId, orderBy: "date", retryToken, skip: !currentCycle || !messId });
   const { rows: settingsRows, serverSynced: settingsSynced } = useCollection("settings", { messId, retryToken, skip: !member || !messId });
+  const { rows: plans } = useCollection("mealPlans", { messId, retryToken, skip: !member || !messId });
+  const { rows: activity } = useCollection("activity", { cycleId: currentCycle?.id, messId, retryToken, skip: !currentCycle || !messId });
   const settingsDoc = settingsRows[0] || {};
   const settings = {
     id: settingsDoc.id,
     mealRate: currentCycle?.mealRate ?? settingsDoc.mealRate ?? 70,
     mealRateMode: currentCycle?.mealRateMode || settingsDoc.mealRateMode || settingsDoc.mealRateMethod || "static",
+    lunchCutoff: settingsDoc.lunchCutoff,
+    dinnerCutoff: settingsDoc.dinnerCutoff,
   };
   const householdActiveMembers = members.filter((item) => item.active);
   const cycleMemberIds = currentCycle?.memberIds || [];
@@ -375,15 +381,19 @@ export function App() {
     { id: "money", label: "Money", icon: Wallet },
     { id: "members", label: "People", icon: Users, adminOnly: true },
     { id: "history", label: "Old Months", icon: Banknote },
+    { id: "activity", label: "Activity", icon: ScrollText },
   ].filter((item) => (!item.adminOnly || isAdmin) && (!item.calculatedOnly || isCalculatedMonth));
 
-  const moreViewIds = ["members", "history"];
+  const moreViewIds = ["members", "history", "activity"];
   const primaryTabs = navigation.filter((item) => !moreViewIds.includes(item.id));
   const moreItems = navigation.filter((item) => moreViewIds.includes(item.id));
   const activeLabel = navigation.find((item) => item.id === activeView)?.label || "Home";
 
   function goTo(viewId, options = {}) {
-    if (viewId === "meals" && !options.keepSession) setMealSessionRequest("");
+    if (viewId === "meals" && !options.keepSession) {
+      setMealSessionRequest("");
+      setMealDateRequest("");
+    }
     if (viewId === "history") setSelectedHistoryCycleId("");
     setActiveView(viewId);
     setMobileSidebarOpen(false);
@@ -406,9 +416,10 @@ export function App() {
     trackEvent("quick_add_opened", { step: step || "menu", view: activeView });
   }
 
-  function openMealSession(session) {
+  function openMealSession(session, date = "") {
     setQuickAdd({ open: false, step: null });
     setMealSessionRequest(session);
+    setMealDateRequest(date);
     goTo("meals", { keepSession: true });
   }
 
@@ -494,6 +505,8 @@ export function App() {
             pendingCount={pendingCount}
             setActiveView={setActiveView}
             openMealSession={openMealSession}
+            plans={plans}
+            currentMess={currentMess}
             onAdd={openQuickAdd}
             onOpenView={goTo}
             setCurrentCycle={setCurrentCycle}
@@ -507,9 +520,12 @@ export function App() {
           />
         ) : null}
         {activeView === "meals" ? (
-          <Meals
+          <MealsScreen
             initialSession={mealSessionRequest}
+            initialDate={mealDateRequest}
             activeMembers={activeMembers}
+            currentMess={currentMess}
+            plans={plans}
             currentCycle={currentCycle}
             dailyMeals={dailyMeals}
             expenses={expenses}
@@ -536,7 +552,8 @@ export function App() {
           />
         ) : null}
         {activeView === "members" && isAdmin ? <Members currentCycle={currentCycle} currentMess={currentMess} ledger={ledger} member={member} members={members} setCurrentCycle={setCurrentCycle} setMessage={setMessage} /> : null}
-        {activeView === "history" ? <History cycles={cycles} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
+        {activeView === "activity" ? <Activity entries={activity} /> : null}
+        {activeView === "history" ? <History cycles={cycles} messName={currentMess?.name} selectedCycleId={selectedHistoryCycleId} onSelectCycle={setSelectedHistoryCycleId} /> : null}
       </main>
 
       <nav className="bottom-nav" aria-label="Main">

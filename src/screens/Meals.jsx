@@ -5,7 +5,10 @@ import { trackEvent, trackFormError } from "../analytics";
 import { DateInput } from "../components/DateInput.jsx";
 import { setRecord, updateRecord } from "../firebase";
 import { getCalculatedMealRate, getMealRateMode, splitMeal, taka } from "../lib/calculations";
-import { formatDisplayDate, formatTk, isBeforeDate, today } from "../lib/format";
+import { logActivity } from "../lib/activity";
+import { addDays, formatDisplayDate, formatTk, isBeforeDate, today } from "../lib/format";
+import { portionsFromPlans } from "../lib/mealPlans";
+import { HeadcountCard, MealPlan } from "./MealPlan.jsx";
 
 const SESSIONS = {
   lunch: { label: "Lunch", icon: Sun },
@@ -30,9 +33,37 @@ function blankSession(rate) {
   return { boxCount: 0, rate: Number(rate) || 70, eaters: [], portions: {}, skipped: false };
 }
 
-export function Meals({ activeMembers, currentCycle, dailyMeals, expenses, initialSession, isAdmin, mealEntries, member, settings, setMessage }) {
-  const [date, setDate] = useState(today());
+// Meals page: "My meals" (plan on/off, guests) and the "Meal sheet" (what was actually eaten).
+export function MealsScreen(props) {
+  const { initialSession, isAdmin } = props;
+  const [tab, setTab] = useState(initialSession || isAdmin ? "sheet" : "plan");
+
+  useEffect(() => {
+    if (initialSession) setTab("sheet");
+  }, [initialSession]);
+
+  return (
+    <div className="meals-screen">
+      <div className="page-tabs" role="tablist" aria-label="Meals">
+        <button aria-selected={tab === "plan"} className={tab === "plan" ? "page-tab active" : "page-tab"} role="tab" type="button" onClick={() => setTab("plan")}>
+          My meals
+        </button>
+        <button aria-selected={tab === "sheet"} className={tab === "sheet" ? "page-tab active" : "page-tab"} role="tab" type="button" onClick={() => setTab("sheet")}>
+          Meal sheet
+        </button>
+      </div>
+      {tab === "plan" ? <MealPlan {...props} /> : <Meals {...props} />}
+    </div>
+  );
+}
+
+export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, expenses, initialDate, initialSession, isAdmin, mealEntries, member, plans = [], settings, setMessage }) {
+  const [date, setDate] = useState(initialDate || today());
   const [session, setSession] = useState(initialSession || defaultSessionForNow());
+
+  useEffect(() => {
+    if (initialDate) setDate(initialDate);
+  }, [initialDate]);
   const [optimisticDailyMeal, setOptimisticDailyMeal] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -80,7 +111,7 @@ export function Meals({ activeMembers, currentCycle, dailyMeals, expenses, initi
   }
 
   return (
-    <div className="meals-screen">
+    <div className="meals-sheet">
       <section className="panel meal-picker">
         <div className="meal-picker__row">
           <label className="meal-picker__date">
@@ -116,8 +147,12 @@ export function Meals({ activeMembers, currentCycle, dailyMeals, expenses, initi
         </div>
       </section>
 
+      {isAdmin ? <HeadcountCard date={date} members={activeMembers} messName={currentMess?.name} plans={plans} /> : null}
+
       <SessionForm
         key={`${date}-${session}`}
+        plans={plans}
+        previousSession={dailyMeals.find((entry) => entry.date === addDays(date, -1))?.[session] || null}
         activeMembers={activeMembers}
         calculatedRate={calculatedRate}
         currentCycle={currentCycle}
@@ -138,7 +173,7 @@ export function Meals({ activeMembers, currentCycle, dailyMeals, expenses, initi
 }
 
 // One meal (lunch or dinner) for one date: view, add, edit and save it on its own.
-function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existingDailyMeal, isAdmin, isCalculated, isDateBeforeCycle, member, onDirtyChange, onSaved, session, settings, setMessage }) {
+function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existingDailyMeal, isAdmin, isCalculated, isDateBeforeCycle, member, onDirtyChange, onSaved, plans = [], previousSession, session, settings, setMessage }) {
   const { label } = SESSIONS[session];
   const lowerLabel = label.toLowerCase();
   const defaultRate = Number(settings.mealRate) || 70;
@@ -156,6 +191,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existi
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [fillNote, setFillNote] = useState("");
 
   function blankPortions() {
     return Object.fromEntries(editableMembers.map((person) => [person.id, 0]));
@@ -275,8 +311,35 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existi
     };
   }
 
+  function fillFromPlans(note = "Filled from everyone’s meal plan. Adjust if anything changed.") {
+    const planned = portionsFromPlans(plans, editableMembers, date, session);
+    const next = blankPortions();
+    Object.entries(planned).forEach(([memberId, value]) => {
+      if (editableMemberIds.has(memberId)) next[memberId] = value;
+    });
+    setPortions(next);
+    setOrdered(isAdmin ? sumPortions(next) : 0);
+    setSkipped(false);
+    setFillNote(note);
+    trackEvent("meal_sheet_filled_from_plans", { session });
+  }
+
+  function fillFromYesterday() {
+    const next = blankPortions();
+    Object.entries(previousSession?.portions || {}).forEach(([memberId, value]) => {
+      if (editableMemberIds.has(memberId)) next[memberId] = Number(value) || 0;
+    });
+    setPortions(next);
+    setOrdered(isAdmin ? sumPortions(next) : 0);
+    setSkipped(false);
+    setFillNote(`Copied from yesterday’s ${lowerLabel}.`);
+    trackEvent("meal_sheet_copied_yesterday", { session });
+  }
+
   function startEditing() {
     hydrate();
+    setFillNote("");
+    if (!sessionAdded && plans.length) fillFromPlans();
     setIsEditing(true);
     trackEvent(sessionAdded ? "meal_session_edit_clicked" : "meal_session_add_clicked", { session });
   }
@@ -290,6 +353,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existi
     if (!existingDailyMeal) return;
     await updateRecord("dailyMeals", existingDailyMeal.id, { status: "approved" });
     setMessage(`Meals approved for ${formatDisplayDate(date)}.`);
+    logActivity({ cycleId: currentCycle.id, kind: "meal", member, messId: currentCycle.messId, summary: `Approved meals for ${formatDisplayDate(date)}` });
     trackEvent("meal_approved", { session });
   }
 
@@ -347,6 +411,15 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existi
       setIsEditing(false);
       setEditingRate(false);
       setMessage(isAdmin ? `${label} saved for ${formatDisplayDate(date)}.` : `${label} saved. An admin will review it.`);
+      logActivity({
+        cycleId: currentCycle.id,
+        kind: "meal",
+        member,
+        messId: currentCycle.messId,
+        summary: skipped
+          ? `Marked no ${lowerLabel} on ${formatDisplayDate(date)}`
+          : `${sessionAdded ? "Updated" : "Added"} ${lowerLabel} for ${formatDisplayDate(date)}: ${taka(demandTotal)} meal${demandTotal === 1 ? "" : "s"}, ${eaters.length} ${eaters.length === 1 ? "person" : "people"}`,
+      });
       trackEvent(sessionAdded ? "meal_session_updated" : "meal_session_created", {
         session,
         status: payload.status,
@@ -389,6 +462,22 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existi
             Submitted by {existingDailyMeal.submittedByName || existingDailyMeal.createdByName || "Admin"}
           </p>
         ) : null}
+
+        {formOpen ? (
+          <div className="fill-row">
+            {plans.length ? (
+              <button className="chip" type="button" onClick={() => fillFromPlans()}>
+                Fill from plans
+              </button>
+            ) : null}
+            {previousSession && isSessionAdded(previousSession) ? (
+              <button className="chip" type="button" onClick={fillFromYesterday}>
+                Same as yesterday
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {formOpen && fillNote ? <p className="fill-note">{fillNote}</p> : null}
 
         {formOpen ? (
           <label className="skip-toggle">

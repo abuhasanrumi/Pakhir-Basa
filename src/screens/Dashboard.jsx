@@ -1,16 +1,19 @@
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { CalendarCheck, ChevronRight, CircleDollarSign, ClipboardCheck, HandCoins, Moon, Plus, ShoppingBasket, Soup, Store, Sun, Wallet } from "lucide-react";
+import { CalendarCheck, ChevronRight, Lock, Pencil, CircleDollarSign, ClipboardCheck, HandCoins, Moon, Plus, ShoppingBasket, Soup, Store, Sun, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { trackEvent } from "../analytics";
 import { ConfirmModal } from "../components/ConfirmModal.jsx";
 import { DateInput } from "../components/DateInput.jsx";
 import { Metric } from "../components/Metric.jsx";
+import { Sheet } from "../components/Sheet.jsx";
 import { db } from "../firebase";
 import { buildCycleSnapshot, getMealEntryRate, getMealRateMode, splitMeal, taka } from "../lib/calculations";
-import { formatDisplayDate, formatTk, today } from "../lib/format";
+import { formatTk, today } from "../lib/format";
+import { cutoffsOf, dayPlan, formatCutoff, headcount, isLocked, planFor } from "../lib/mealPlans";
 import { buildMemberMealStats, groupMealsByDate } from "../lib/meals";
+import { savePlan } from "./MealPlan.jsx";
 
-export function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, onAdd, onOpenView, openMealSession, pendingCount, setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
+export function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCalculatedMonth, ledger, mealEntries, member, members, onAdd, onOpenView, openMealSession, pendingCount, plans = [], setActiveView, setCurrentCycle, setMobileSidebarOpen, setSelectedHistoryCycleId, setMessage, totals, deposits, messCash, settings }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today());
   const approvedMeals = mealEntries.filter((entry) => entry.status === "approved");
@@ -84,7 +87,7 @@ export function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCa
         </section>
       ) : null}
 
-      <TodayCard mealEntries={mealEntries} onOpenSession={openMealSession} />
+      <TodayCard currentCycle={currentCycle} mealEntries={mealEntries} member={member} members={activeMembers} onOpenSession={openMealSession} plans={plans} setMessage={setMessage} settings={settings} />
 
       {isAdmin && pendingCount > 0 ? (
         <button
@@ -158,7 +161,7 @@ export function Dashboard({ activeMembers, currentCycle, expenses, isAdmin, isCa
       </section>
 
       <MemberSummaryTable isCalculatedMonth={isCalculatedMonth} ledger={ledger} members={members} mealStats={memberMealStats} />
-      <MealCalendar activeMembers={activeMembers} mealsByDate={mealsByDate} selectedDate={selectedDate} setSelectedDate={setSelectedDate} settings={settings} activeRate={totals.mealRate} />
+      <MealCalendar activeMembers={activeMembers} mealsByDate={mealsByDate} onOpenSession={isAdmin ? openMealSession : null} selectedDate={selectedDate} setSelectedDate={setSelectedDate} settings={settings} activeRate={totals.mealRate} />
       {isAdmin ? (
         <section className="admin-danger-zone">
           <div>
@@ -270,7 +273,7 @@ export function MemberSummaryTable({ isCalculatedMonth, ledger, mealStats, membe
   );
 }
 
-export function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedDate, setSelectedDate, settings }) {
+export function MealCalendar({ activeMembers, activeRate, mealsByDate, onOpenSession, selectedDate, setSelectedDate, settings }) {
   const [detailDate, setDetailDate] = useState(null);
   const monthStart = new Date(`${selectedDate.slice(0, 7)}-01T00:00:00`);
   const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
@@ -317,61 +320,22 @@ export function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedD
         )}
       </div>
       {detailDate ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDetailDate(null)}>
-          <div className="modal-card meal-details-modal" role="dialog" aria-modal="true" aria-labelledby="meal-details-title" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="modal-heading meal-details-modal__heading">
-              <span className="eyebrow">Daily meals</span>
-              <h2 id="meal-details-title">Meals on {formatDisplayDate(detailDate)}</h2>
-              <p>{detailEntries.length ? "Lunch and dinner split for this date." : "No meals were saved for this date."}</p>
-            </div>
-            <div className="meal-details-summary">
-              <article className="meal-details-summary__item">
-                <span>Total ordered</span>
-                <strong>{detailEntries.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0)}</strong>
-              </article>
-              <article className="meal-details-summary__item">
-                <span>Meal rate</span>
-                <strong>{formatTk(activeRate)}</strong>
-              </article>
-            </div>
-            <div className="daily-details">
-              {detailEntries.map((entry) => {
-                const rate = getMealRateMode(settings) === "calculated" ? activeRate : getMealEntryRate(entry, settings);
-                const shares = splitMeal(entry, rate);
-                const totalShare = Object.values(shares).reduce((sum, amount) => sum + Number(amount || 0), 0);
-                return (
-                  <article className="daily-meal-card" key={entry.id}>
-                    <div className="daily-meal-card__top">
-                      <div className="daily-meal-card__session">
-                        <span>{entry.session}</span>
-                        <strong>{entry.boxCount} ordered</strong>
-                        <small>Submitted by {entry.submittedByName || entry.createdByName || "Admin"}</small>
-                      </div>
-                      <div className="daily-meal-card__rate">
-                        <span>{formatTk(rate)} rate</span>
-                      </div>
-                    </div>
-                    <div className="daily-meal-card__chips">
-                      {Object.entries(shares).map(([memberId, amount]) => (
-                        <span key={memberId} className="meal-share-chip">
-                          {activeMembers.find((person) => person.id === memberId)?.name || memberId}: {formatTk(amount)}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="daily-meal-card__footer">
-                      <small>{Object.keys(shares).length} person{Object.keys(shares).length === 1 ? "" : "s"} ate this meal</small>
-                      <strong>{formatTk(totalShare)}</strong>
-                    </div>
-                  </article>
-                );
-              })}
-              {!detailEntries.length ? <p className="empty">No meals for this date.</p> : null}
-            </div>
-            <div className="modal-actions">
-              <button className="secondary" type="button" onClick={() => setDetailDate(null)}>Close</button>
-            </div>
-          </div>
-        </div>
+        <DayDetailsSheet
+          activeMembers={activeMembers}
+          activeRate={activeRate}
+          date={detailDate}
+          entries={detailEntries}
+          onClose={() => setDetailDate(null)}
+          onOpenSession={
+            onOpenSession
+              ? (session) => {
+                  setDetailDate(null);
+                  onOpenSession(session, detailDate);
+                }
+              : null
+          }
+          settings={settings}
+        />
       ) : null}
     </section>
   );
@@ -405,36 +369,172 @@ function sessionSummary(entries, session) {
 }
 
 // At-a-glance status for today's lunch and dinner, with a shortcut to the meal sheet.
-function TodayCard({ mealEntries, onOpenSession }) {
+function TodayCard({ currentCycle, mealEntries, member, members, onOpenSession, plans, setMessage, settings }) {
   const date = today();
   const todaysEntries = mealEntries.filter((entry) => entry.date === date);
   const lunch = sessionSummary(todaysEntries, "lunch");
   const dinner = sessionSummary(todaysEntries, "dinner");
+  const planned = { lunch: headcount(plans, members, date, "lunch"), dinner: headcount(plans, members, date, "dinner") };
+  const myPlan = dayPlan(planFor(plans, member.id), date);
+  const isInMonth = members.some((person) => person.id === member.id);
+
+  async function toggleMine(session) {
+    if (isLocked(date, session, settings)) {
+      setMessage(`Today’s ${session} is locked after ${formatCutoff(cutoffsOf(settings)[session])}. Ask an admin to change it.`);
+      return;
+    }
+    try {
+      await savePlan({
+        currentCycle,
+        date,
+        editor: member,
+        isAdmin: false,
+        person: member,
+        values: { lunch: myPlan.lunch, dinner: myPlan.dinner, lunchGuests: myPlan.lunchGuests, dinnerGuests: myPlan.dinnerGuests, [session]: myPlan[session] > 0 ? 0 : 1 },
+      });
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  const heading = new Date(`${date}T00:00:00`).toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <section className="today-card" aria-label="Today's meals">
-      <div className="today-card__head">
-        <div>
-          <span className="eyebrow">Today</span>
-          <h2>{formatDisplayDate(date)}</h2>
-        </div>
-      </div>
-      <div className="today-card__sessions">
+    <section className="tc" aria-label="Today's meals">
+      <header className="tc__head">
+        <span className="tc__eyebrow">Today</span>
+        <h2>{heading}</h2>
+      </header>
+      <div className="tc__sessions">
         {[
           ["lunch", "Lunch", Sun, lunch],
           ["dinner", "Dinner", Moon, dinner],
-        ].map(([key, label, Icon, info]) => (
-          <button className={`today-session today-session--${info.state}`} key={key} type="button" onClick={() => onOpenSession(key)}>
-            <span className="today-session__top">
-              <Icon size={18} />
-              <span>{label}</span>
-              {info.state === "empty" ? <Plus className="today-session__go" size={18} /> : <ChevronRight className="today-session__go" size={18} />}
-            </span>
-            <strong>{info.label}</strong>
-            <small>{info.detail || (info.state === "empty" ? `Tap to add` : "\u00a0")}</small>
-          </button>
-        ))}
+        ].map(([key, label, Icon, info]) => {
+          const plannedTotal = planned[key].total;
+          return (
+            <button className={`tc-tile tc-tile--${info.state}`} key={key} type="button" onClick={() => onOpenSession(key)}>
+              <span className="tc-tile__icon">
+                <Icon size={18} />
+              </span>
+              <span className="tc-tile__body">
+                <span className="tc-tile__label">{label}</span>
+                {info.state === "empty" ? (
+                  <span className="tc-tile__status">{plannedTotal ? `${plannedTotal} planned` : "Not added yet"}</span>
+                ) : (
+                  <span className="tc-tile__status">
+                    <strong>{info.label}</strong> · {info.detail}
+                  </span>
+                )}
+              </span>
+              {info.state === "empty" ? (
+                <span className="tc-tile__add">
+                  <Plus size={14} /> Add
+                </span>
+              ) : (
+                <ChevronRight className="tc-tile__go" size={18} />
+              )}
+            </button>
+          );
+        })}
       </div>
+      {isInMonth ? (
+        <div className="tc__mine">
+          <span className="tc__mine-label">You</span>
+          {["lunch", "dinner"].map((session) => {
+            const on = myPlan[session] > 0;
+            const locked = isLocked(date, session, settings);
+            const guests = myPlan[`${session}Guests`];
+            return (
+              <button aria-pressed={on} className={`plan-pill${on ? " on" : ""}${locked ? " locked" : ""}`} disabled={locked} key={session} title={locked ? `Locked after ${formatCutoff(cutoffsOf(settings)[session])}` : undefined} type="button" onClick={() => toggleMine(session)}>
+                {locked ? <Lock size={13} /> : session === "lunch" ? <Sun size={14} /> : <Moon size={14} />}
+                <span>{session === "lunch" ? "Lunch" : "Dinner"} {on ? "on" : "off"}</span>
+                {guests ? <b>+{guests}</b> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+// What was eaten on one date: totals, then each meal with who ate and what they owe.
+function DayDetailsSheet({ activeMembers, activeRate, date, entries, onClose, onOpenSession, settings }) {
+  const nameOf = (memberId) => activeMembers.find((person) => person.id === memberId)?.name || "Former member";
+  const sessions = ["lunch", "dinner"].map((session) => {
+    const entry = entries.find((item) => item.session === session) || null;
+    if (!entry) return { session, entry: null, rows: [], total: 0, rate: 0 };
+    const rate = getMealRateMode(settings) === "calculated" ? activeRate : getMealEntryRate(entry, settings);
+    const shares = splitMeal(entry, rate);
+    const rows = Object.entries(shares)
+      .map(([memberId, amount]) => ({ memberId, name: nameOf(memberId), portion: Number(entry.portions?.[memberId] || 0), amount }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    return { session, entry, rows, rate, total: taka(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)) };
+  });
+  const totalMeals = taka(entries.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0));
+  const totalCost = taka(sessions.reduce((sum, item) => sum + item.total, 0));
+  const title = new Date(`${date}T00:00:00`).toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short" });
+
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <div className="day-details">
+        <div className="day-details__stats">
+          <div>
+            <span>Meals</span>
+            <strong>{totalMeals}</strong>
+          </div>
+          <div>
+            <span>Cost</span>
+            <strong>{formatTk(totalCost)}</strong>
+          </div>
+          <div>
+            <span>Rate</span>
+            <strong>{formatTk(sessions.find((item) => item.entry)?.rate || activeRate)}</strong>
+          </div>
+        </div>
+
+        {sessions.map(({ entry, rate, rows, session, total }) => {
+          const Icon = session === "lunch" ? Sun : Moon;
+          const label = session === "lunch" ? "Lunch" : "Dinner";
+          return (
+            <section className="day-details__session" key={session}>
+              <header>
+                <span className="day-details__icon">
+                  <Icon size={17} />
+                </span>
+                <span className="day-details__title">
+                  <strong>{label}</strong>
+                  <small>
+                    {entry
+                      ? `${taka(Number(entry.boxCount || 0))} meal${Number(entry.boxCount) === 1 ? "" : "s"} · ${formatTk(rate)} each`
+                      : "Not added"}
+                  </small>
+                </span>
+                {entry ? <strong className="day-details__total">{formatTk(total)}</strong> : null}
+              </header>
+              {rows.length ? (
+                <ul>
+                  {rows.map((row) => (
+                    <li key={row.memberId}>
+                      <span>{row.name}</span>
+                      <small>{row.portion ? `${row.portion} meal${row.portion === 1 ? "" : "s"}` : ""}</small>
+                      <strong>{formatTk(row.amount)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <footer>
+                <small>{entry ? `Added by ${entry.submittedByName || entry.createdByName || "admin"}${entry.status === "pending" ? " · pending" : ""}` : ""}</small>
+                {onOpenSession ? (
+                  <button className="chip" type="button" onClick={() => onOpenSession(session)}>
+                    {entry ? <Pencil size={14} /> : <Plus size={14} />} {entry ? `Edit ${session}` : `Add ${session}`}
+                  </button>
+                ) : null}
+              </footer>
+            </section>
+          );
+        })}
+      </div>
+    </Sheet>
   );
 }
