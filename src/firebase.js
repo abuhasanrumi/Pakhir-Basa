@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { GoogleAuthProvider, getAuth, signInWithPopup, signOut } from "firebase/auth";
+import { GoogleAuthProvider, connectAuthEmulator, getAuth, signInWithPopup, signOut } from "firebase/auth";
 import {
     addDoc,
     collection,
@@ -45,6 +45,14 @@ export const initialAdminEmail = import.meta.env.VITE_INITIAL_ADMIN_EMAIL?.toLow
 
 export const app = hasFirebaseConfig ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
+
+// Local development only: sign in against the Auth emulator so testing never uses real accounts.
+const useAuthEmulator = import.meta.env.VITE_USE_AUTH_EMULATOR === "true";
+if (auth && useAuthEmulator && !globalThis.__pakhirBasarAuthEmulatorConnected) {
+  connectAuthEmulator(auth, import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL || "http://127.0.0.1:9099", { disableWarnings: true });
+  globalThis.__pakhirBasarAuthEmulatorConnected = true;
+  globalThis.__pakhirBasarDevAuth = auth;
+}
 // Firestore's default streaming connection often stalls on Brave and on iOS (every
 // iOS browser is WebKit), so the first reads sit on a spinner until the SDK's
 // auto-detect gives up. Use long polling there straight away.
