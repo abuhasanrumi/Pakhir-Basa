@@ -6262,3 +6262,179 @@ button.pending-banner > div {
     font-size: 0.88rem;
   }
 }
+
+/* ------------------------------------------------------------------
+   Meal form (one lunch/dinner): single card, consistent spacing
+------------------------------------------------------------------- */
+.meal-session-panel .meal-session-box,
+.meal-session-panel .meal-session-box--lunch,
+.meal-session-panel .meal-session-box--dinner {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  filter: none;
+  gap: 16px;
+  padding: 0;
+}
+
+.meal-session-panel .meal-session-header {
+  border-bottom: 0;
+  gap: 16px;
+  padding-bottom: 0;
+}
+
+/* The tab above already says Lunch/Dinner; keep just the live total. */
+.meal-session-panel .meal-session-header h3 {
+  display: none;
+}
+
+.meal-session-panel .meal-session-header > div:first-child span {
+  background: var(--accent-glow);
+  border-radius: 999px;
+  color: var(--primary);
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.meal-session-panel .session-controls {
+  align-items: end;
+  display: grid;
+  gap: 10px 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.meal-session-panel .ordered-field {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.meal-session-panel .rate-field {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.meal-session-panel .ordered-meal-pills {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.meal-session-panel .ordered-field input,
+.meal-session-panel .rate-inline-editor {
+  min-height: 48px;
+}
+
+.meal-session-panel .meal-quick-actions {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 14px;
+}
+
+.meal-session-panel .skip-toggle {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--panel-border);
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  padding: 0 0 14px;
+}
+
+.meal-session-panel .meal-session-meta {
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 12px;
+}
+
+.meal-picker__date {
+  flex: 1 1 auto;
+  max-width: 340px;
+  min-width: 0;
+}
+
+.meal-picker__row {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1024px) {
+  .meal-session-panel {
+    padding: 16px;
+  }
+
+  .meal-session-panel .form-grid {
+    gap: 16px;
+  }
+
+  .meal-session-panel form .form-actions {
+    margin: 0 -16px -16px;
+    border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg);
+  }
+
+  .meal-picker {
+    padding: 16px;
+  }
+}
+
+.meal-session-panel .rate-inline-editor {
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) 40px 40px;
+  min-height: 0;
+}
+
+.meal-session-panel .rate-inline-editor span,
+.meal-session-panel .rate-inline-editor input {
+  border-radius: var(--border-radius-md);
+  font-size: 1rem;
+  min-height: 48px;
+}
+
+.meal-session-panel .rate-inline-editor button {
+  border-radius: 12px;
+  min-height: 48px;
+}
+
+.meal-session-panel .ordered-field input {
+  border-radius: var(--border-radius-md);
+  font-weight: 700;
+}
+
+@media (max-width: 360px) {
+  .meal-session-panel .session-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-session-panel .rate-field {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .meal-session-panel .ordered-meal-pills {
+    grid-row: 3;
+  }
+}
+
+/* Desktop: keep the meal page a comfortable width and use compact person rows */
+.meals-screen {
+  margin: 0 auto;
+  max-width: 900px;
+  width: 100%;
+}
+
+@media (min-width: 1025px) {
+  .meal-session-panel .meal-member-list {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .meal-session-panel .meal-member-row {
+    align-items: center;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) 138px;
+    padding: 8px 8px 8px 12px;
+  }
+
+  .meal-session-panel .portion-controls {
+    gap: 4px;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+  }
+}
