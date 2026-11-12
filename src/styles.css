@@ -7899,3 +7899,39 @@ button.pending-banner > div {
     grid-column: auto;
   }
 }
+
+/* Today card: keep the date on one line; its column sizes to fit it */
+.tc__head h2 {
+  white-space: nowrap;
+}
+
+@media (min-width: 1025px) {
+  .tc {
+    grid-template-columns: auto minmax(0, 1fr) 260px;
+  }
+}
+
+@media (min-width: 1025px) and (max-width: 1200px) {
+  .tc {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+/* Today card: one row only when there is room for date + both tiles + toggles */
+@media (min-width: 1025px) and (max-width: 1360px) {
+  .tc {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tc__mine {
+    border-left: 0;
+    border-top: 1px solid var(--panel-border);
+    grid-column: 1 / -1;
+    grid-template-columns: auto 1fr 1fr;
+    padding: 12px 0 0;
+  }
+
+  .tc__mine-label {
+    grid-column: auto;
+  }
+}
