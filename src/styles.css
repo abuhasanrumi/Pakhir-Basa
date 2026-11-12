@@ -6090,3 +6090,175 @@ button.pending-banner > div {
 .money-hero__stats .is-warn strong {
   color: #f1cc7c;
 }
+
+/* Today tiles: label row on top, status below, so nothing wraps on small phones */
+.today-card__sessions .today-session {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.today-session__top {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.today-session__top > svg:first-child {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.today-session__top > span {
+  color: var(--text-light);
+  flex: 1;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  min-width: 0;
+  text-transform: uppercase;
+}
+
+.today-session__top .today-session__go {
+  align-self: center;
+  color: var(--text-light);
+  flex: 0 0 auto;
+}
+
+.today-session--empty .today-session__top .today-session__go {
+  color: var(--accent);
+}
+
+.today-card__sessions .today-session > strong,
+.today-card__sessions .today-session > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-card__sessions .today-session > strong {
+  font-size: 1.1rem;
+}
+
+.today-card__sessions .today-session--empty > strong {
+  color: var(--text-light);
+  font-size: 1.05rem;
+}
+
+@media (max-width: 340px) {
+  .today-card {
+    padding: 14px;
+  }
+
+  .today-card__sessions {
+    gap: 8px;
+  }
+
+  .today-card__sessions .today-session {
+    padding: 10px 12px;
+  }
+}
+
+.today-session .today-session__top {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.today-session .today-session__top > span {
+  display: block;
+}
+
+/* Calendar days: number on top, meal count as a small badge (no "meals" text) */
+.calendar-grid .calendar-day {
+  align-content: start;
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-sans);
+  gap: 6px;
+  justify-content: flex-start;
+  min-height: 64px;
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.calendar-grid .calendar-day > span {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.calendar-day.has-meals {
+  background: linear-gradient(180deg, #ffffff, rgba(216, 175, 84, 0.08));
+}
+
+.calendar-day.is-today > span {
+  color: #b7791f;
+}
+
+.calendar-day__count {
+  background: var(--primary);
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 22px;
+  padding: 4px 6px;
+}
+
+@media (max-width: 1024px) {
+  .calendar-grid .calendar-day {
+    min-height: 52px;
+    padding: 7px 2px;
+  }
+
+  .calendar-day__count {
+    font-size: 0.66rem;
+    min-width: 18px;
+    padding: 3px 5px;
+  }
+}
+
+/* Meals page on very narrow phones: keep tab status and date on one line */
+.session-tab__text {
+  min-width: 0;
+}
+
+.session-tab__text small,
+.session-tab__text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 360px) {
+  .session-tab {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .session-tab__check {
+    display: none;
+  }
+
+  .meal-picker__date {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .pretty-date-display {
+    font-size: 0.88rem;
+  }
+}

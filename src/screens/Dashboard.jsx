@@ -380,9 +380,14 @@ export function MealCalendar({ activeMembers, activeRate, mealsByDate, selectedD
 export function CalendarDayButton({ cell, isSelected, onClick }) {
   const orderedMeals = taka(cell.entries.reduce((sum, entry) => sum + Number(entry.boxCount || 0), 0));
   return (
-    <button className={isSelected ? "calendar-day selected" : "calendar-day"} onClick={onClick}>
-      <span>{cell.day}</span>
-      {orderedMeals ? <small>{orderedMeals} meal{orderedMeals === 1 ? "" : "s"}</small> : null}
+    <button
+      aria-label={`${Number(cell.day)}: ${orderedMeals ? `${orderedMeals} meal${orderedMeals === 1 ? "" : "s"}` : "no meals"}`}
+      className={`calendar-day${isSelected ? " selected" : ""}${orderedMeals ? " has-meals" : ""}${cell.date === today() ? " is-today" : ""}`}
+      type="button"
+      onClick={onClick}
+    >
+      <span>{Number(cell.day)}</span>
+      {orderedMeals ? <b className="calendar-day__count">{Math.round(orderedMeals * 10) / 10}</b> : null}
     </button>
   );
 }
@@ -420,13 +425,13 @@ function TodayCard({ mealEntries, onOpenSession }) {
           ["dinner", "Dinner", Moon, dinner],
         ].map(([key, label, Icon, info]) => (
           <button className={`today-session today-session--${info.state}`} key={key} type="button" onClick={() => onOpenSession(key)}>
-            <Icon size={18} />
-            <div>
+            <span className="today-session__top">
+              <Icon size={18} />
               <span>{label}</span>
-              <strong>{info.label}</strong>
-              {info.detail ? <small>{info.detail}</small> : null}
-            </div>
-            {info.state === "empty" ? <Plus className="today-session__go" size={18} /> : <ChevronRight className="today-session__go" size={18} />}
+              {info.state === "empty" ? <Plus className="today-session__go" size={18} /> : <ChevronRight className="today-session__go" size={18} />}
+            </span>
+            <strong>{info.label}</strong>
+            <small>{info.detail || (info.state === "empty" ? `Tap to add` : "\u00a0")}</small>
           </button>
         ))}
       </div>
