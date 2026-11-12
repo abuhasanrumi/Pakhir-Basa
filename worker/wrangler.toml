@@ -1,0 +1,14 @@
+# Pakhir Basa AI: speech-to-text and "understand what was said" for the meal tracker.
+name = "pakhir-basa-ai"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[ai]
+binding = "AI"
+
+[vars]
+FIREBASE_PROJECT_ID = "pakhir-basar-meal-tracker"
+ALLOWED_ORIGINS = "https://pakhir-basa.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+# Only for local testing with the Firebase Auth emulator (its tokens are unsigned).
+# Never set this in production: `wrangler dev --var ALLOW_UNSIGNED_DEV_TOKENS:true`.
+ALLOW_UNSIGNED_DEV_TOKENS = "false"

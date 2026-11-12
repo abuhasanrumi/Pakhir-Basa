@@ -58,7 +58,7 @@ export function MealsScreen(props) {
   );
 }
 
-export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, expenses, initialDate, initialSession, isAdmin, mealEntries, member, plans = [], settings, setMessage }) {
+export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, expenses, initialDate, initialSession, isAdmin, mealDraft, onDraftUsed, mealEntries, member, plans = [], settings, setMessage }) {
   const [date, setDate] = useState(initialDate || today());
   const [session, setSession] = useState(initialSession || defaultSessionForNow());
 
@@ -152,6 +152,8 @@ export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, ex
 
       <SessionForm
         key={`${date}-${session}`}
+        draft={mealDraft && mealDraft.date === date && mealDraft.session === session ? mealDraft : null}
+        onDraftUsed={onDraftUsed}
         plans={plans}
         previousSession={dailyMeals.find((entry) => entry.date === addDays(date, -1))?.[session] || null}
         activeMembers={activeMembers}
@@ -174,7 +176,7 @@ export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, ex
 }
 
 // One meal (lunch or dinner) for one date: view, add, edit and save it on its own.
-function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existingDailyMeal, isAdmin, isCalculated, isDateBeforeCycle, member, onDirtyChange, onSaved, plans = [], previousSession, session, settings, setMessage }) {
+function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft = null, existingDailyMeal, isAdmin, onDraftUsed, isCalculated, isDateBeforeCycle, member, onDirtyChange, onSaved, plans = [], previousSession, session, settings, setMessage }) {
   const { label } = SESSIONS[session];
   const lowerLabel = label.toLowerCase();
   const defaultRate = Number(settings.mealRate) || 70;
@@ -225,6 +227,26 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, existi
   useEffect(() => {
     onDirtyChange(isEditing);
   }, [isEditing]);
+
+  // A draft from the assistant opens the form filled in; the person still checks and saves.
+  useEffect(() => {
+    if (!draft?.token) return;
+    hydrate();
+    if (draft.skipped) {
+      setSkipped(true);
+    } else {
+      const next = blankPortions();
+      (draft.portions || []).forEach((item) => {
+        if (editableMemberIds.has(item.memberId)) next[item.memberId] = Number(item.count) || 0;
+      });
+      setPortions(next);
+      setOrdered(isAdmin ? sumPortions(next) : 0);
+      setSkipped(false);
+    }
+    setFillNote("Filled from what you said. Check it, then save.");
+    setIsEditing(true);
+    onDraftUsed?.();
+  }, [draft?.token]);
 
   useEffect(() => {
     if (!formError) return undefined;

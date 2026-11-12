@@ -27,14 +27,16 @@ export function moneyKindOf(entry) {
 }
 
 // Amount-first form for deposits, merchant payments and bazaar. Pass `entry` to edit.
-export function MoneyForm({ activeMembers, currentCycle, dueToMerchant = 0, entry, isAdmin, kind, member, onDone, setMessage }) {
+export function MoneyForm({ activeMembers, currentCycle, dueToMerchant = 0, entry, initial = null, isAdmin, kind, member, onDone, setMessage }) {
   const config = MONEY_KINDS[kind];
-  const [amount, setAmount] = useState(entry ? String(entry.amount ?? "") : "");
-  const [date, setDate] = useState(entry?.date || today());
-  const [memberId, setMemberId] = useState(entry?.memberId || member.id);
-  const [method, setMethod] = useState(entry?.method || "Cash");
-  const [note, setNote] = useState(entry?.note || (kind === "bazaar" ? entry?.title || "" : ""));
-  const [category, setCategory] = useState(entry?.category && entry.category !== "meal" ? entry.category : "bazaar");
+  // `initial` pre-fills a new entry (e.g. from what someone said to the assistant).
+  const start = entry || initial || {};
+  const [amount, setAmount] = useState(start.amount ? String(start.amount) : "");
+  const [date, setDate] = useState(start.date || today());
+  const [memberId, setMemberId] = useState(start.memberId || member.id);
+  const [method, setMethod] = useState(start.method || "Cash");
+  const [note, setNote] = useState(start.note || (kind === "bazaar" ? start.title || "" : ""));
+  const [category, setCategory] = useState(start.category && start.category !== "meal" ? start.category : "bazaar");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const numericAmount = Number(amount);

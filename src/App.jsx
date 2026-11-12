@@ -2,6 +2,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { Banknote, CalendarCheck, LayoutGrid, LogOut, Plus, ScrollText, Soup, Users, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { identifyAnalyticsUser, trackEvent, trackPageView } from "./analytics";
+import { AssistantSheet } from "./components/AssistantSheet.jsx";
 import { Avatar } from "./components/Avatar.jsx";
 import { MessSwitcher } from "./components/MessSwitcher.jsx";
 import { MoreSheet } from "./components/MoreSheet.jsx";
@@ -32,7 +33,9 @@ export function App() {
   const [currentCycle, setCurrentCycle] = useState(null);
   const [selectedHistoryCycleId, setSelectedHistoryCycleId] = useState("");
   const [activeView, setActiveView] = useState("dashboard");
-  const [quickAdd, setQuickAdd] = useState({ open: false, step: null });
+  const [quickAdd, setQuickAdd] = useState({ open: false, step: null, initial: null });
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [mealDraft, setMealDraft] = useState(null);
   const [mealSessionRequest, setMealSessionRequest] = useState("");
   const [mealDateRequest, setMealDateRequest] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -393,6 +396,7 @@ export function App() {
     if (viewId === "meals" && !options.keepSession) {
       setMealSessionRequest("");
       setMealDateRequest("");
+      setMealDraft(null);
     }
     if (viewId === "history") setSelectedHistoryCycleId("");
     setActiveView(viewId);
@@ -410,17 +414,37 @@ export function App() {
     ),
   );
 
-  function openQuickAdd(step = null) {
+  function openQuickAdd(step = null, initial = null) {
     setMobileSidebarOpen(false);
-    setQuickAdd({ open: true, step });
+    setQuickAdd({ open: true, step, initial });
     trackEvent("quick_add_opened", { step: step || "menu", view: activeView });
   }
 
-  function openMealSession(session, date = "") {
-    setQuickAdd({ open: false, step: null });
+  function openMealSession(session, date = "", draft = null) {
+    setQuickAdd({ open: false, step: null, initial: null });
     setMealSessionRequest(session);
     setMealDateRequest(date);
+    setMealDraft(draft ? { ...draft, date: date || draft.date, session, token: Date.now() } : null);
     goTo("meals", { keepSession: true });
+  }
+
+  // The assistant only drafts; the person checks the filled form and saves it themselves.
+  function applyAssistantDraft(draft) {
+    setAssistantOpen(false);
+    if (draft.intent === "meal") {
+      openMealSession(draft.session, draft.date, { portions: draft.portions, skipped: Boolean(draft.skipped) });
+      return;
+    }
+    if (["deposit", "merchant", "bazaar"].includes(draft.intent)) {
+      openQuickAdd(draft.intent, {
+        amount: draft.amount,
+        date: draft.date,
+        memberId: draft.memberId,
+        method: draft.method || undefined,
+        note: draft.note || "",
+        category: draft.category || undefined,
+      });
+    }
   }
 
   return (
@@ -523,6 +547,8 @@ export function App() {
           <MealsScreen
             initialSession={mealSessionRequest}
             initialDate={mealDateRequest}
+            mealDraft={mealDraft}
+            onDraftUsed={() => setMealDraft(null)}
             activeMembers={activeMembers}
             currentMess={currentMess}
             plans={plans}
@@ -596,11 +622,30 @@ export function App() {
           isAdmin={isAdmin}
           isCalculatedMonth={isCalculatedMonth}
           member={member}
-          onClose={() => setQuickAdd({ open: false, step: null })}
+          initial={quickAdd.initial}
+          onClose={() => setQuickAdd({ open: false, step: null, initial: null })}
+          onOpenAssistant={() => {
+            setQuickAdd({ open: false, step: null, initial: null });
+            setAssistantOpen(true);
+            trackEvent("assistant_opened");
+          }}
           onOpenMeal={openMealSession}
-          onStepChange={(step) => setQuickAdd({ open: true, step })}
+          onStepChange={(step) => setQuickAdd({ open: true, step, initial: null })}
           setMessage={setMessage}
           step={quickAdd.step}
+        />
+      ) : null}
+
+      {assistantOpen ? (
+        <AssistantSheet
+          activeMembers={activeMembers}
+          isAdmin={isAdmin}
+          isCalculatedMonth={isCalculatedMonth}
+          ledger={ledger}
+          member={member}
+          onApply={applyAssistantDraft}
+          onClose={() => setAssistantOpen(false)}
+          totals={totals}
         />
       ) : null}
 
