@@ -184,6 +184,13 @@ export function AssistantSheet({ activeMembers, isAdmin, isCalculatedMonth, ledg
                 rows={2}
                 value={text}
                 onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  // Enter sends; Shift+Enter adds a new line. Skip while an IME (e.g. Bangla keyboard) is composing.
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    if (text.trim() && !busy) understand(text);
+                  }
+                }}
               />
               <button aria-label="Send" className="primary" disabled={busy || !text.trim()} type="submit">
                 {status === "thinking" ? <Loader2 className="spin" size={18} /> : <ArrowUp size={18} />}
