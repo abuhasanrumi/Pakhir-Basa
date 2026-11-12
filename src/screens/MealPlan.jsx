@@ -1,5 +1,5 @@
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
-import { Clock, Lock, Minus, Moon, Plus, Share2, Sun, UserPlus } from "lucide-react";
+import { ChevronDown, Clock, Lock, Minus, Moon, Plus, Share2, Sun, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { trackEvent } from "../analytics";
 import { Sheet } from "../components/Sheet.jsx";
@@ -312,38 +312,41 @@ export function HeadcountCard({ date, members, messName, plans, title }) {
     window.setTimeout(() => setStatus(""), 2500);
   }
 
+  const [open, setOpen] = useState(false);
+
   return (
-    <section className="panel headcount">
-      <header>
-        <div>
-          <h3>{title || `Planned for ${shortDayLabel(date).toLowerCase()}`}</h3>
-          <p>From everyone’s meal plan</p>
-        </div>
-        <button className="secondary headcount__share" type="button" onClick={share}>
-          <Share2 size={16} /> {status || "Share"}
+    <section className={open ? "panel headcount-bar open" : "panel headcount-bar"}>
+      <div className="headcount-bar__row">
+        <button aria-expanded={open} className="headcount-bar__toggle" type="button" onClick={() => setOpen(!open)}>
+          <span className="headcount-bar__label">{title || "Planned"}</span>
+          <span className="headcount-bar__count">
+            <Sun size={15} /> {lunch.total}
+          </span>
+          <span className="headcount-bar__count">
+            <Moon size={15} /> {dinner.total}
+          </span>
+          <ChevronDown className="headcount-bar__chevron" size={16} />
         </button>
-      </header>
-      <div className="headcount__sessions">
-        {[
-          ["lunch", lunch],
-          ["dinner", dinner],
-        ].map(([session, count]) => {
-          const Icon = SESSION_INFO[session].icon;
-          return (
-            <div className="headcount__session" key={session}>
-              <span className="headcount__total">
-                <Icon size={16} /> {SESSION_INFO[session].label}
-                <strong>{count.total}</strong>
-              </span>
-              <small>
-                {count.people} {count.people === 1 ? "person" : "people"}
-                {count.guests ? ` + ${count.guests} guest${count.guests === 1 ? "" : "s"}` : ""}
-              </small>
-              <p>{line(count)}</p>
-            </div>
-          );
-        })}
+        <button aria-label="Share meal count" className="headcount-bar__share" type="button" onClick={share}>
+          <Share2 size={16} /> {status || ""}
+        </button>
       </div>
+      {open ? (
+        <div className="headcount-bar__detail">
+          {[
+            ["lunch", lunch],
+            ["dinner", dinner],
+          ].map(([session, count]) => (
+            <p key={session}>
+              <strong>
+                {SESSION_INFO[session].label} {count.total}
+              </strong>
+              {count.guests ? ` (${count.people} + ${count.guests} guest${count.guests === 1 ? "" : "s"})` : ""}: {line(count)}
+            </p>
+          ))}
+          <small>From everyone’s meal plan (My meals tab).</small>
+        </div>
+      ) : null}
     </section>
   );
 }

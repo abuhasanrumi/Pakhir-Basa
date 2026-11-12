@@ -7935,3 +7935,94 @@ button.pending-banner > div {
     grid-column: auto;
   }
 }
+
+/* Compact planned headcount on the meal sheet */
+.headcount-bar {
+  padding: 6px 8px 6px 14px;
+}
+
+.headcount-bar__row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.headcount-bar__toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-main);
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font-family: var(--font-sans);
+  gap: 12px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.headcount-bar__label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.headcount-bar__count {
+  align-items: center;
+  color: var(--primary);
+  display: inline-flex;
+  font-weight: 800;
+  gap: 4px;
+}
+
+.headcount-bar__count svg {
+  color: var(--accent);
+}
+
+.headcount-bar__chevron {
+  color: var(--text-light);
+  margin-left: auto;
+  transition: transform 160ms ease;
+}
+
+.headcount-bar.open .headcount-bar__chevron {
+  transform: rotate(180deg);
+}
+
+.headcount-bar__share {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  color: var(--primary);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+  gap: 4px;
+  height: 36px;
+  justify-content: center;
+  min-width: 36px;
+  padding: 0 8px;
+}
+
+.headcount-bar__detail {
+  border-top: 1px solid var(--panel-border);
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px 6px 6px 0;
+}
+
+.headcount-bar__detail p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.headcount-bar__detail small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

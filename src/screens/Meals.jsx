@@ -35,8 +35,9 @@ function blankSession(rate) {
 
 // Meals page: "My meals" (plan on/off, guests) and the "Meal sheet" (what was actually eaten).
 export function MealsScreen(props) {
-  const { initialSession, isAdmin } = props;
-  const [tab, setTab] = useState(initialSession || isAdmin ? "sheet" : "plan");
+  const { initialSession } = props;
+  // The meal sheet is what people use daily; "My meals" (plans) is occasional.
+  const [tab, setTab] = useState("sheet");
 
   useEffect(() => {
     if (initialSession) setTab("sheet");
@@ -45,11 +46,11 @@ export function MealsScreen(props) {
   return (
     <div className="meals-screen">
       <div className="page-tabs" role="tablist" aria-label="Meals">
-        <button aria-selected={tab === "plan"} className={tab === "plan" ? "page-tab active" : "page-tab"} role="tab" type="button" onClick={() => setTab("plan")}>
-          My meals
-        </button>
         <button aria-selected={tab === "sheet"} className={tab === "sheet" ? "page-tab active" : "page-tab"} role="tab" type="button" onClick={() => setTab("sheet")}>
           Meal sheet
+        </button>
+        <button aria-selected={tab === "plan"} className={tab === "plan" ? "page-tab active" : "page-tab"} role="tab" type="button" onClick={() => setTab("plan")}>
+          My meals
         </button>
       </div>
       {tab === "plan" ? <MealPlan {...props} /> : <Meals {...props} />}
