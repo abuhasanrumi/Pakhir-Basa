@@ -572,20 +572,22 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
         <div className="form-actions">
           {formOpen ? (
             <>
-              <button className="secondary" type="button" onClick={cancelEditing}>Cancel</button>
-              <button className="primary" disabled={isSaving || isDateBeforeCycle} type="submit">
+              {/* Keys matter: without them React reuses the "Edit" button node as "Save", and the
+                  click that opened the form finishes as a submit (it saved straight away). */}
+              <button className="secondary" key="cancel" type="button" onClick={cancelEditing}>Cancel</button>
+              <button className="primary" disabled={isSaving || isDateBeforeCycle} key="save" type="submit">
                 <Check size={18} /> {isSaving ? "Saving..." : `Save ${lowerLabel}`}{!skipped && sessionTotal ? ` · ${formatTk(sessionTotal)}` : ""}
               </button>
             </>
           ) : (
             <>
               {isAdmin && existingDailyMeal?.status === "pending" ? (
-                <button className="primary" type="button" onClick={approveDay}>
+                <button className="primary" key="approve" type="button" onClick={approveDay}>
                   <Check size={18} /> Approve
                 </button>
               ) : null}
               {canEditExisting ? (
-                <button className="secondary" type="button" onClick={startEditing}>
+                <button className="secondary" key="edit" type="button" onClick={startEditing}>
                   <Pencil size={18} /> Edit {lowerLabel}
                 </button>
               ) : null}
