@@ -204,11 +204,14 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
 
   function hydrate() {
     const next = blankPortions();
+    // Only people listed as eaters count; ignore leftover portions from older merge-saves.
+    const eaterIds = new Set(savedSession?.eaters || []);
     Object.entries(savedSession?.portions || {}).forEach(([memberId, value]) => {
+      if (eaterIds.size && !eaterIds.has(memberId)) return;
       if (editableMemberIds.has(memberId)) next[memberId] = value;
     });
     const savedCount = Number(savedSession?.boxCount || 0);
-    setOrdered(cleanMealCount(isAdmin && savedCount <= 0 ? sumPortions(savedSession?.portions) : savedCount));
+    setOrdered(cleanMealCount(isAdmin && savedCount <= 0 ? sumPortions(next) : savedCount));
     setRate(savedSession?.rate || defaultRate);
     setPortions(next);
     setUnavailable({});
@@ -441,7 +444,10 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
 
     try {
       setIsSaving(true);
-      await setRecord("dailyMeals", docId, payload);
+      // Existing day: update() replaces this meal's whole map, so people removed from it
+      // (e.g. via ×) really go away. A merge write would keep their old portion.
+      if (existingDailyMeal) await updateRecord("dailyMeals", docId, payload);
+      else await setRecord("dailyMeals", docId, payload);
       onSaved(docId, payload);
       setIsEditing(false);
       setEditingRate(false);
