@@ -1,5 +1,5 @@
 import { getMess } from "../firebase";
-import { getMealEntryRate, getMealRateMode, splitMeal, taka } from "./calculations";
+import { getMealEntryRate, getMealRateMode, splitMeal, taka, cleanMealCount } from "./calculations";
 
 export function flattenDailyMeals(dailyMeals = []) {
   return dailyMeals.flatMap((day) =>
@@ -13,7 +13,7 @@ export function flattenDailyMeals(dailyMeals = []) {
         cycleId: day.cycleId,
         date: day.date,
         session,
-        boxCount: Number(meal.boxCount || 0),
+        boxCount: cleanMealCount(meal.boxCount),
         rate: Number(meal.rate || day.mealRate || 70),
         rateMode: day.rateMode,
         eaters: meal.eaters || [],

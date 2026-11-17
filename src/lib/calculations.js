@@ -25,6 +25,14 @@ export function getMealEntryRate(entry = {}, settings = {}, context = {}) {
   return Number(entry.rate) || fallbackRate;
 }
 
+// Splitting meals into thirds leaves rounding dust (0.67 + 0.67 + 1.67 = 3.01).
+// A meal count within 0.05 of a whole or half number is that number.
+export function cleanMealCount(value) {
+  const number = Number(value) || 0;
+  const nearestHalf = Math.round(number * 2) / 2;
+  return Math.abs(number - nearestHalf) <= 0.05 ? nearestHalf : taka(number);
+}
+
 export function splitMeal(entry, rateOverride) {
   const eaters = entry.eaters || [];
   const activeRate = rateOverride !== undefined && rateOverride !== null ? Number(rateOverride) : (Number(entry.rate) || 70);

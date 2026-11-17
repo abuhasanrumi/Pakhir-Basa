@@ -330,7 +330,7 @@ export function MealCalendar({ activeMembers, activeRate, mealsByDate, onOpenSes
             onOpenSession
               ? (session) => {
                   setDetailDate(null);
-                  onOpenSession(session, detailDate);
+                  onOpenSession(session, detailDate, null, { edit: true });
                 }
               : null
           }
@@ -412,7 +412,7 @@ function TodayCard({ currentCycle, mealEntries, member, members, onOpenSession, 
         ].map(([key, label, Icon, info]) => {
           const plannedTotal = planned[key].total;
           return (
-            <button className={`tc-tile tc-tile--${info.state}`} key={key} type="button" onClick={() => onOpenSession(key)}>
+            <button className={`tc-tile tc-tile--${info.state}`} key={key} type="button" onClick={() => onOpenSession(key, "", null, { edit: info.state === "empty" ? true : false })}>
               <span className="tc-tile__icon">
                 <Icon size={18} />
               </span>

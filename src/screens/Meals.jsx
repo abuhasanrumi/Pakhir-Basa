@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { trackEvent, trackFormError } from "../analytics";
 import { DateInput } from "../components/DateInput.jsx";
 import { setRecord, updateRecord } from "../firebase";
-import { getCalculatedMealRate, getMealRateMode, splitMeal, taka } from "../lib/calculations";
+import { getCalculatedMealRate, getMealRateMode, splitMeal, taka, cleanMealCount } from "../lib/calculations";
 import { logActivity } from "../lib/activity";
 import { addDays, formatDisplayDate, formatTk, isBeforeDate, today } from "../lib/format";
 import { portionsFromPlans } from "../lib/mealPlans";
@@ -58,7 +58,7 @@ export function MealsScreen(props) {
   );
 }
 
-export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, expenses, initialDate, initialSession, isAdmin, mealDraft, onDraftUsed, mealEntries, member, plans = [], settings, setMessage }) {
+export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, expenses, initialDate, initialSession, isAdmin, mealDraft, mealEditRequest, onDraftUsed, onEditRequestUsed, mealEntries, member, plans = [], settings, setMessage }) {
   const [date, setDate] = useState(initialDate || today());
   const [session, setSession] = useState(initialSession || defaultSessionForNow());
 
@@ -107,7 +107,7 @@ export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, ex
     const data = existingDailyMeal?.[sessionKey];
     if (!isSessionAdded(data)) return "Not added";
     if (data.skipped) return `No ${sessionKey}`;
-    const count = taka(Number(data.boxCount || 0) || sumPortions(data.portions));
+    const count = cleanMealCount(Number(data.boxCount || 0) || sumPortions(data.portions));
     return `${count} meal${count === 1 ? "" : "s"}`;
   }
 
@@ -154,6 +154,8 @@ export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, ex
         key={`${date}-${session}`}
         draft={mealDraft && mealDraft.date === date && mealDraft.session === session ? mealDraft : null}
         onDraftUsed={onDraftUsed}
+        editRequest={mealEditRequest && mealEditRequest.date === date && mealEditRequest.session === session ? mealEditRequest : null}
+        onEditRequestUsed={onEditRequestUsed}
         plans={plans}
         previousSession={dailyMeals.find((entry) => entry.date === addDays(date, -1))?.[session] || null}
         activeMembers={activeMembers}
@@ -176,7 +178,7 @@ export function Meals({ activeMembers, currentCycle, currentMess, dailyMeals, ex
 }
 
 // One meal (lunch or dinner) for one date: view, add, edit and save it on its own.
-function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft = null, existingDailyMeal, isAdmin, onDraftUsed, isCalculated, isDateBeforeCycle, member, onDirtyChange, onSaved, plans = [], previousSession, session, settings, setMessage }) {
+function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft = null, editRequest = null, existingDailyMeal, isAdmin, onDraftUsed, onEditRequestUsed, isCalculated, isDateBeforeCycle, member, onDirtyChange, onSaved, plans = [], previousSession, session, settings, setMessage }) {
   const { label } = SESSIONS[session];
   const lowerLabel = label.toLowerCase();
   const defaultRate = Number(settings.mealRate) || 70;
@@ -206,7 +208,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
       if (editableMemberIds.has(memberId)) next[memberId] = value;
     });
     const savedCount = Number(savedSession?.boxCount || 0);
-    setOrdered(isAdmin && savedCount <= 0 ? sumPortions(savedSession?.portions) : savedCount);
+    setOrdered(cleanMealCount(isAdmin && savedCount <= 0 ? sumPortions(savedSession?.portions) : savedCount));
     setRate(savedSession?.rate || defaultRate);
     setPortions(next);
     setUnavailable({});
@@ -240,13 +242,21 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
         if (editableMemberIds.has(item.memberId)) next[item.memberId] = Number(item.count) || 0;
       });
       setPortions(next);
-      setOrdered(isAdmin ? sumPortions(next) : 0);
+      setOrdered(isAdmin ? cleanMealCount(sumPortions(next)) : 0);
       setSkipped(false);
     }
     setFillNote("Filled from what you said. Check it, then save.");
     setIsEditing(true);
     onDraftUsed?.();
   }, [draft?.token]);
+
+  // Coming from "Edit"/"Add" elsewhere (calendar, Today card, + menu): open the form directly.
+  useEffect(() => {
+    if (!editRequest?.token) return;
+    const canOpen = sessionAdded ? editRequest.mode === true && canEditExisting : !isDateBeforeCycle;
+    if (canOpen) startEditing();
+    onEditRequestUsed?.();
+  }, [editRequest?.token]);
 
   useEffect(() => {
     if (!formError) return undefined;
@@ -258,13 +268,14 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
   const formOpen = isEditing;
   const activeRate = isCalculated ? calculatedRate : Number(rate || defaultRate);
   const demandTotal = sumPortions(portions);
+  const orderedCount = Number(ordered) > 0 ? cleanMealCount(ordered) : cleanMealCount(demandTotal);
   const preview = splitMeal({
-    boxCount: skipped ? 0 : demandTotal,
+    boxCount: skipped ? 0 : orderedCount,
     rate: activeRate,
     eaters: skipped ? [] : selectedMemberIds(portions),
     portions: skipped ? {} : positivePortions(portions),
   });
-  const sessionTotal = skipped ? 0 : taka(demandTotal * activeRate);
+  const sessionTotal = skipped ? 0 : taka(orderedCount * activeRate);
 
   function selectedMemberIds(values) {
     return Object.entries(values)
@@ -324,7 +335,8 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
       return { boxCount: 0, rate: Number(rate || defaultRate), eaters: [], portions: {}, skipped: true };
     }
     return {
-      boxCount: isAdmin ? demandTotal : 0,
+      // Store what was ordered; portions are only how it is shared (they can add up to 3.01 with thirds).
+      boxCount: isAdmin ? (Number(ordered) > 0 ? cleanMealCount(ordered) : cleanMealCount(demandTotal)) : 0,
       // Members can't edit the rate, but `rate` already holds this meal's saved rate
       // (or the month default), so keep it instead of resetting to the default.
       rate: Number(rate || defaultRate),
@@ -341,7 +353,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
       if (editableMemberIds.has(memberId)) next[memberId] = value;
     });
     setPortions(next);
-    setOrdered(isAdmin ? sumPortions(next) : 0);
+    setOrdered(isAdmin ? cleanMealCount(sumPortions(next)) : 0);
     setSkipped(false);
     setFillNote(note);
     trackEvent("meal_sheet_filled_from_plans", { session });
@@ -353,7 +365,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
       if (editableMemberIds.has(memberId)) next[memberId] = Number(value) || 0;
     });
     setPortions(next);
-    setOrdered(isAdmin ? sumPortions(next) : 0);
+    setOrdered(isAdmin ? cleanMealCount(sumPortions(next)) : 0);
     setSkipped(false);
     setFillNote(`Copied from yesterday’s ${lowerLabel}.`);
     trackEvent("meal_sheet_copied_yesterday", { session });
@@ -399,7 +411,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
 
     if (isAdmin && !skipped) {
       // An empty ordered count just means "same as the portions".
-      if (Number(ordered) > 0 && Math.abs(Number(ordered) - demandTotal) > 0.01) {
+      if (Number(ordered) > 0 && Math.abs(Number(ordered) - demandTotal) > 0.05) {
         setFormError(`Ordered meals (${taka(Number(ordered))}) should match everyone’s portions (${taka(demandTotal)}).`);
         trackFormError("meal_session", "ordered_count_mismatch");
         return;
@@ -479,7 +491,7 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
 
   return (
     <section className="panel meal-session-panel">
-      <form className="form-grid" onSubmit={submit}>
+      <form className="form-grid" noValidate onSubmit={submit}>
         {existingDailyMeal && sessionAdded ? (
           <p className="meal-session-meta">
             Submitted by {existingDailyMeal.submittedByName || existingDailyMeal.createdByName || "Admin"}
@@ -594,7 +606,7 @@ export function MealSessionEditor({
   const availableMembers = activeMembers.filter((person) => !unavailableMembers[person.id]);
   const rateDisabled = disabled || skipped || !allowRateEdit;
   const totalPortions = skipped ? 0 : taka(Object.values(portions).reduce((sum, value) => sum + Number(value || 0), 0));
-  const sessionCount = skipped ? 0 : Number(ordered) || totalPortions;
+  const sessionCount = skipped ? 0 : cleanMealCount(Number(ordered) || totalPortions);
   const estimatedTotal = skipped ? 0 : taka(sessionCount * (Number(rate) || 0));
   const activeCount = skipped ? 0 : Object.values(portions).filter((value) => Number(value) > 0).length;
   const sessionClass = label.toLowerCase();
@@ -627,7 +639,7 @@ export function MealSessionEditor({
             <div className="session-controls">
               <label className="ordered-field">
                 Ordered meals
-                <input disabled={portionControlsDisabled} min="0" step="0.5" type="number" value={ordered} onChange={(event) => setOrdered(event.target.value)} />
+                <input disabled={portionControlsDisabled} min="0" step="any" type="number" value={ordered} onChange={(event) => setOrdered(event.target.value)} />
               </label>
               <div className="ordered-meal-pills" aria-label={`${label} ordered meals quick choices`}>
                 {[1, 2, 3, 4].map((count) => (
@@ -656,6 +668,7 @@ export function MealSessionEditor({
                     <input
                       autoFocus
                       min="1"
+                      step="any"
                       type="number"
                       disabled={rateDisabled}
                       value={rate}

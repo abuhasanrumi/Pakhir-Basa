@@ -13,6 +13,7 @@ import { useCollection } from "./hooks/useCollection";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { trackedSignOut } from "./lib/actions";
 import { readLocalCache, writeLocalCache } from "./lib/cache";
+import { today } from "./lib/format";
 import { calculateLedger, getCalculatedMealRate, getMealEntryRate, getMealRateMode, taka } from "./lib/calculations";
 import { enrichMembershipsWithMessNames, flattenDailyMeals } from "./lib/meals";
 import { Dashboard } from "./screens/Dashboard.jsx";
@@ -36,6 +37,7 @@ export function App() {
   const [quickAdd, setQuickAdd] = useState({ open: false, step: null, initial: null });
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [mealDraft, setMealDraft] = useState(null);
+  const [mealEditRequest, setMealEditRequest] = useState(null);
   const [mealSessionRequest, setMealSessionRequest] = useState("");
   const [mealDateRequest, setMealDateRequest] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -397,6 +399,7 @@ export function App() {
       setMealSessionRequest("");
       setMealDateRequest("");
       setMealDraft(null);
+      setMealEditRequest(null);
     }
     if (viewId === "history") setSelectedHistoryCycleId("");
     setActiveView(viewId);
@@ -420,11 +423,13 @@ export function App() {
     trackEvent("quick_add_opened", { step: step || "menu", view: activeView });
   }
 
-  function openMealSession(session, date = "", draft = null) {
+  // options.edit: true opens the form straight away; "ifEmpty" only when that meal isn't added yet.
+  function openMealSession(session, date = "", draft = null, options = {}) {
     setQuickAdd({ open: false, step: null, initial: null });
     setMealSessionRequest(session);
     setMealDateRequest(date);
     setMealDraft(draft ? { ...draft, date: date || draft.date, session, token: Date.now() } : null);
+    setMealEditRequest(options.edit ? { date: date || today(), session, mode: options.edit, token: Date.now() } : null);
     goTo("meals", { keepSession: true });
   }
 
@@ -548,6 +553,8 @@ export function App() {
             initialSession={mealSessionRequest}
             initialDate={mealDateRequest}
             mealDraft={mealDraft}
+            mealEditRequest={mealEditRequest}
+            onEditRequestUsed={() => setMealEditRequest(null)}
             onDraftUsed={() => setMealDraft(null)}
             activeMembers={activeMembers}
             currentMess={currentMess}
@@ -629,7 +636,7 @@ export function App() {
             setAssistantOpen(true);
             trackEvent("assistant_opened");
           }}
-          onOpenMeal={openMealSession}
+          onOpenMeal={(session) => openMealSession(session, "", null, { edit: "ifEmpty" })}
           onStepChange={(step) => setQuickAdd({ open: true, step, initial: null })}
           setMessage={setMessage}
           step={quickAdd.step}

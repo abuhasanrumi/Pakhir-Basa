@@ -225,3 +225,25 @@ describe("expense and ledger calculation", () => {
     expect(ledger.sami.balance).toBe(400);
   });
 });
+
+import { cleanMealCount } from "./calculations";
+
+describe("meal count rounding", () => {
+  it("treats thirds rounding dust as the whole or half number", () => {
+    expect(cleanMealCount(3.01)).toBe(3);
+    expect(cleanMealCount(2.99)).toBe(3);
+    expect(cleanMealCount(1.98)).toBe(2);
+    expect(cleanMealCount(2.51)).toBe(2.5);
+  });
+
+  it("keeps real fractional counts", () => {
+    expect(cleanMealCount(2.25)).toBe(2.25);
+    expect(cleanMealCount(0)).toBe(0);
+  });
+
+  it("charges ordered × rate however the shares round", () => {
+    const shares = splitMeal({ boxCount: cleanMealCount(3.01), rate: 80, eaters: ["a", "b", "c"], portions: { a: 0.67, b: 0.67, c: 1.67 } });
+    const total = Object.values(shares).reduce((sum, value) => sum + value, 0);
+    expect(Math.round(total)).toBe(240);
+  });
+});
