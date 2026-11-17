@@ -1,6 +1,6 @@
 import { serverTimestamp } from "firebase/firestore";
 import { Check, Moon, Pencil, Plus, RotateCcw, Soup, Sun, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trackEvent, trackFormError } from "../analytics";
 import { DateInput } from "../components/DateInput.jsx";
 import { setRecord, updateRecord } from "../firebase";
@@ -17,6 +17,15 @@ const SESSIONS = {
 
 function defaultSessionForNow() {
   return new Date().getHours() < 16 ? "lunch" : "dinner";
+}
+
+// JSON with object keys sorted, so the same data always gives the same string.
+function stableKey(value) {
+  return JSON.stringify(value, (key, item) =>
+    item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(Object.keys(item).sort().map((name) => [name, item[name]]))
+      : item,
+  );
 }
 
 function sumPortions(portions = {}) {
@@ -223,10 +232,15 @@ function SessionForm({ activeMembers, calculatedRate, currentCycle, date, draft 
   // people's saves), so re-hydrate only when this meal's saved content really changes.
   // Otherwise a remote write would wipe an edit in progress.
   const memberIdsKey = activeMembers.map((person) => person.id).join(",");
-  const savedKey = JSON.stringify([existingDailyMeal?.id, existingDailyMeal?.status, savedSession || null]);
+  // Compare content with sorted keys: Firestore may resend the same meal with its fields
+  // in a different order (it does this a lot on Brave/iOS long polling).
+  const savedKey = stableKey([existingDailyMeal?.id, existingDailyMeal?.status, savedSession || null]);
+  const isEditingRef = useRef(false);
+  isEditingRef.current = isEditing;
   useEffect(() => {
+    // Never throw away an edit in progress because of a background update; Save/Cancel decide.
+    if (isEditingRef.current) return;
     hydrate();
-    setIsEditing(false);
   }, [memberIdsKey, savedKey, defaultRate]);
 
   useEffect(() => {

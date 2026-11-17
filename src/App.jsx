@@ -42,7 +42,6 @@ export function App() {
   const [mealDateRequest, setMealDateRequest] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
-  const [syncGateExpired, setSyncGateExpired] = useState(false);
   const [message, setMessage] = useState("");
   const { isOnline, retryConnection, retryToken } = useOnlineStatus();
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite") || "", []);
@@ -60,43 +59,67 @@ export function App() {
     }
 
     return onAuthStateChanged(auth, async (nextUser) => {
+      const email = nextUser?.email?.toLowerCase() || "";
+      const cachedSession = email ? readLocalCache(`session:${email}`, null) : null;
+      // Reopening the app: show the last session straight away, then refresh it in the
+      // background, instead of waiting on several network round trips behind a spinner.
+      const startFromCache = Boolean(email && !inviteToken && cachedSession?.member?.active);
+
+      function applySession(session) {
+        setMemberships(session.memberships || [session.member]);
+        setCurrentMess(session.mess || null);
+        setMember(session.member);
+        setCurrentCycle(session.currentCycle || null);
+      }
+
       try {
         setUser(nextUser);
-        setMember(null);
-        setMemberships([]);
-        setCurrentMess(null);
-        setCurrentCycle(null);
-        setBootstrapping(true);
         setMessage("");
+        if (startFromCache) {
+          applySession(cachedSession);
+          setBootstrapping(false);
+          trackEvent("cached_session_loaded", { has_open_cycle: Boolean(cachedSession.currentCycle), instant: true });
+        } else {
+          setMember(null);
+          setMemberships([]);
+          setCurrentMess(null);
+          setCurrentCycle(null);
+          setBootstrapping(true);
+        }
 
-        if (!nextUser?.email) {
+        if (!email) {
           setBootstrapping(false);
           return;
         }
 
         trackEvent("sign_in_completed", { provider: "google", has_invite: Boolean(inviteToken) });
-        const email = nextUser.email.toLowerCase();
-        const cachedSession = readLocalCache(`session:${email}`, null);
         let joinedMember = null;
         if (inviteToken) {
           joinedMember = await joinInvite({ token: inviteToken, user: nextUser });
           trackEvent("invite_accepted", { role: joinedMember.role });
           window.history.replaceState({}, document.title, window.location.pathname);
         }
-        const appMemberships = await getMemberships(email);
+
+        // Fetch the mess and its open month in parallel with the memberships when we already
+        // know which mess to open; otherwise fall back to fetching them after.
+        const guessMessId = joinedMember?.messId || cachedSession?.mess?.id || "";
+        const [appMemberships, guessedMess, guessedCycle] = await Promise.all([
+          getMemberships(email),
+          guessMessId ? getMess(guessMessId).catch(() => null) : Promise.resolve(null),
+          guessMessId ? getOpenCycle(guessMessId).catch(() => null) : Promise.resolve(null),
+        ]);
         const nextMemberships = await enrichMembershipsWithMessNames(joinedMember && !appMemberships.some((item) => item.id === joinedMember.id) ? [joinedMember, ...appMemberships] : appMemberships);
-        const preferredMessId = joinedMember?.messId || cachedSession?.mess?.id || nextMemberships[0]?.messId || "";
+        const preferredMessId = guessMessId || nextMemberships[0]?.messId || "";
         const appMember = nextMemberships.find((item) => item.messId === preferredMessId) || nextMemberships[0] || null;
 
         if (appMember?.active) {
-          const mess = await getMess(appMember.messId);
-          const openCycle = await getOpenCycle(appMember.messId);
-          setMemberships(nextMemberships);
-          setCurrentMess(mess);
-          setMember(appMember);
-          setCurrentCycle(openCycle);
-          setSelectedHistoryCycleId("");
-          setMobileSidebarOpen(false);
+          const sameMess = appMember.messId === guessMessId && guessedMess;
+          const [mess, openCycle] = sameMess ? [guessedMess, guessedCycle] : await Promise.all([getMess(appMember.messId), getOpenCycle(appMember.messId)]);
+          applySession({ currentCycle: openCycle, member: appMember, memberships: nextMemberships, mess });
+          if (!startFromCache) {
+            setSelectedHistoryCycleId("");
+            setMobileSidebarOpen(false);
+          }
           writeLocalCache(`session:${email}`, { currentCycle: openCycle, member: appMember, memberships: nextMemberships, mess });
           trackEvent("mess_session_loaded", {
             role: appMember.role,
@@ -104,28 +127,22 @@ export function App() {
             has_open_cycle: Boolean(openCycle),
           });
         } else if (!navigator.onLine && cachedSession?.member?.active) {
-          setMemberships(cachedSession.memberships || [cachedSession.member]);
-          setCurrentMess(cachedSession.mess || null);
-          setMember(cachedSession.member);
-          setCurrentCycle(cachedSession.currentCycle || null);
-          setSelectedHistoryCycleId("");
-          setMobileSidebarOpen(false);
+          applySession(cachedSession);
           trackEvent("cached_session_loaded", { has_open_cycle: Boolean(cachedSession.currentCycle) });
+        } else {
+          // No active membership any more (e.g. removed from the mess): leave the cached view.
+          setMember(null);
+          setMemberships(nextMemberships);
+          setCurrentMess(null);
+          setCurrentCycle(null);
         }
 
         setBootstrapping(false);
       } catch (error) {
         console.error("Firebase setup failed", error);
-        const email = nextUser?.email?.toLowerCase();
-        const cachedSession = email ? readLocalCache(`session:${email}`, null) : null;
-        if (!navigator.onLine && cachedSession?.member?.active) {
-          setMemberships(cachedSession.memberships || [cachedSession.member]);
-          setCurrentMess(cachedSession.mess || null);
-          setMember(cachedSession.member);
-          setCurrentCycle(cachedSession.currentCycle || null);
-          setSelectedHistoryCycleId("");
-          setMobileSidebarOpen(false);
-          setMessage("");
+        if (startFromCache || (!navigator.onLine && cachedSession?.member?.active)) {
+          // Keep showing the saved session; the live listeners will catch up when they can.
+          if (!startFromCache) applySession(cachedSession);
         } else {
           setMessage(error.code === "permission-denied" ? "Couldn’t open your mess yet. Please sign out and try again." : error.message);
           trackEvent("app_bootstrap_failed", { error_code: error.code || "unknown" });
@@ -166,17 +183,9 @@ export function App() {
   const baseServerSynced = membersSynced && cyclesSynced && settingsSynced;
   const cycleServerSynced = !currentCycle || (dailyMealsSynced && depositsSynced && (!isCalculatedMonth || expensesSynced));
   const serverDataReady = isOnline && baseServerSynced && cycleServerSynced;
-  const editingDataReady = serverDataReady || syncGateExpired;
-  const readOnlyMode = Boolean(member) && (!isOnline || !editingDataReady);
-
-  useEffect(() => {
-    setSyncGateExpired(false);
-    if (!member || !isOnline || serverDataReady) return undefined;
-    const timeoutId = window.setTimeout(() => {
-      setSyncGateExpired(true);
-    }, 4000);
-    return () => window.clearTimeout(timeoutId);
-  }, [currentCycle?.id, isOnline, member?.id, messId, retryToken, serverDataReady]);
+  // Only block editing when actually offline. While online, the saved copy is shown at once
+  // and the live data replaces it a moment later; open forms are kept (see Meals.jsx).
+  const readOnlyMode = Boolean(member) && !isOnline;
 
   useEffect(() => {
     if (!member?.email || !serverDataReady) return;
