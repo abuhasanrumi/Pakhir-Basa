@@ -8,7 +8,7 @@ binding = "AI"
 
 [vars]
 FIREBASE_PROJECT_ID = "pakhir-basar-meal-tracker"
-ALLOWED_ORIGINS = "https://pakhir-basa.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = "https://pakhir-basa.pages.dev,https://pakhir-basa.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
 # Only for local testing with the Firebase Auth emulator (its tokens are unsigned).
 # Never set this in production: `wrangler dev --var ALLOW_UNSIGNED_DEV_TOKENS:true`.
 ALLOW_UNSIGNED_DEV_TOKENS = "false"
